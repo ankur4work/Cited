@@ -1,7 +1,16 @@
 import { Worker, type Job } from 'bullmq';
-import { connection, QUEUES, type IngestionJobData, type IngestionJobName } from './queue';
+import {
+  connection,
+  QUEUES,
+  type IngestionJobData,
+  type IngestionJobName,
+  type SyndicationJobData,
+  type SyndicationJobName,
+} from './queue';
 import { ingestProductsProcessor } from './processors/ingest-products';
 import { ingestOrdersProcessor } from './processors/ingest-orders';
+import { syndicateReviewProcessor } from './processors/syndicate-review';
+import { syndicateAggregateProcessor } from './processors/syndicate-aggregate';
 import { moveToDlq } from './dlq';
 import { logger } from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
@@ -73,7 +82,63 @@ ingestionWorker.on('completed', (job) => {
   );
 });
 
-logger.info({ queues: [QUEUES.INGESTION] }, 'Cited worker started');
+// ── Syndication ──────────────────────────────────────────────
+// Mirrors reviews into Shopify metaobjects. Concurrency is much higher than
+// ingestion because these are ordinary GraphQL mutations, not bulk
+// operations, so they are limited by the Admin API cost budget the client
+// already throttles against rather than by a one-at-a-time constraint.
+
+type SyndicationHandler = (
+  job: Job<SyndicationJobData, unknown, SyndicationJobName>,
+) => Promise<void>;
+
+const syndicationHandlers: Record<SyndicationJobName, SyndicationHandler> = {
+  'syndicate:review': syndicateReviewProcessor,
+  'syndicate:aggregate': syndicateAggregateProcessor,
+  // Bulk re-projection of an entire store, used after Shopify grants the
+  // restricted scope. Not implemented yet: it must resume and rate-limit,
+  // and a naive version would hammer the Admin API on large catalogs.
+  'syndicate:backfill': async (job) => {
+    logger.warn(
+      { storeId: job.data.storeId },
+      'syndicate:backfill not implemented — no-op until the resumable version lands',
+    );
+  },
+};
+
+const syndicationWorker = new Worker<SyndicationJobData, unknown, SyndicationJobName>(
+  QUEUES.SYNDICATION,
+  async (job) => {
+    const handler = syndicationHandlers[job.name];
+    if (!handler) throw new Error(`No handler for job name ${job.name}`);
+    return handler(job);
+  },
+  { connection, concurrency: 20 },
+);
+
+syndicationWorker.on('failed', async (job, err) => {
+  if (!job) return;
+  logger.error(
+    {
+      queue: QUEUES.SYNDICATION,
+      name: job.name,
+      jobId: job.id,
+      storeId: job.data?.storeId,
+      reviewId: job.data?.reviewId,
+      attempt: job.attemptsMade,
+      err: err.message,
+    },
+    'Syndication job failed',
+  );
+
+  if (job.attemptsMade >= (job.opts.attempts ?? 1)) {
+    await moveToDlq(job, err).catch((e) =>
+      logger.error({ err: (e as Error).message }, 'Failed to move job to DLQ'),
+    );
+  }
+});
+
+logger.info({ queues: [QUEUES.INGESTION, QUEUES.SYNDICATION] }, 'Cited worker started');
 
 /**
  * Graceful shutdown.
@@ -85,7 +150,7 @@ logger.info({ queues: [QUEUES.INGESTION] }, 'Cited worker started');
 async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, 'Worker shutting down — draining in-flight jobs');
   try {
-    await ingestionWorker.close();
+    await Promise.all([ingestionWorker.close(), syndicationWorker.close()]);
     await prisma.$disconnect();
     await connection.quit();
   } catch (err) {
