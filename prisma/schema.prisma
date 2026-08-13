@@ -184,6 +184,7 @@ model Store {
   updatedAt DateTime @updatedAt
 
   products     Product[]
+  orders       Order[]
   reviews      Review[]
   reviewGroups ReviewGroup[]
   questions    Question[]
@@ -274,6 +275,79 @@ model ReviewGroup {
 
   @@index([storeId])
   @@map("review_groups")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Orders
+// ─────────────────────────────────────────────────────────────
+
+/// Local order mirror. Exists for three reasons the review engine cannot
+/// work without: deciding WHO to email and WHEN, matching a review back to
+/// a real purchase so verified-buyer status means something, and knowing
+/// which products a customer actually bought so one email can request
+/// reviews for all of them.
+///
+/// Customer email is stored encrypted, with a separate hash for lookup and
+/// suppression matching — we must be able to suppress an address without
+/// ever decrypting a column to find it.
+model Order {
+  id         String @id @default(cuid())
+  storeId    String
+  shopifyGid String
+
+  orderNumber       String?
+  customerEmailEnc  String?
+  customerEmailHash String?
+  customerName      String?
+  customerLocale    String?
+
+  currency   String?
+  totalCents Int?
+
+  processedAt DateTime?
+  fulfilledAt DateTime?
+  cancelledAt DateTime?
+  refundedAt  DateTime?
+
+  financialStatus   String?
+  fulfillmentStatus String?
+
+  /// Set once a request has been scheduled for this order, so re-ingesting
+  /// the same order can never re-trigger an email.
+  requestScheduledAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  store     Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  lineItems OrderLineItem[]
+
+  @@unique([storeId, shopifyGid])
+  @@index([storeId, fulfilledAt])
+  @@index([storeId, requestScheduledAt])
+  @@index([customerEmailHash])
+  @@map("orders")
+}
+
+model OrderLineItem {
+  id      String @id @default(cuid())
+  storeId String
+  orderId String
+
+  productShopifyGid String?
+  variantShopifyGid String?
+  /// Resolved local product, when the catalog contains it. Nullable because
+  /// an order can reference a product deleted since purchase.
+  productId String?
+
+  title    String
+  quantity Int    @default(1)
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([storeId, productShopifyGid])
+  @@map("order_line_items")
 }
 
 // ─────────────────────────────────────────────────────────────

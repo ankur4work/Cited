@@ -153,7 +153,7 @@ export async function fetchActiveSubscription(
  * be testing — exactly what happened on the first real install.
  *
  * Caveat: a plan billed purely through usage meters would still be classified
- * by name here, which is correct; GapFinder defines no usage charges.
+ * by name here, which is correct; Cited defines no usage charges.
  */
 export function planFromSubscription(sub: ActiveSubscription | null): Plan {
   if (!sub || sub.status !== 'ACTIVE') return 'FREE';

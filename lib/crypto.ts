@@ -1,4 +1,10 @@
-import { createCipheriv, createDecipheriv, randomBytes, timingSafeEqual } from 'node:crypto';
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from 'node:crypto';
 import { env } from './env';
 
 const ALGO = 'aes-256-gcm';
@@ -30,6 +36,27 @@ export function decrypt(payload: string): string {
   decipher.setAuthTag(tag);
   const pt = Buffer.concat([decipher.update(ct), decipher.final()]);
   return pt.toString('utf8');
+}
+
+/**
+ * Deterministic, keyed hash of an email address.
+ *
+ * HMAC rather than a bare SHA-256: the space of real email addresses is
+ * small enough to brute-force, so an unkeyed digest of a customer list is
+ * barely better than storing the addresses. Keying it with SESSION_SECRET
+ * means a leaked database alone does not reverse the hashes.
+ *
+ * Deterministic on purpose — suppression lookups, duplicate-review checks
+ * and order matching all need to find an address without decrypting a
+ * column. Normalised first so casing and stray whitespace can't produce two
+ * different hashes for the same person.
+ *
+ * Rotating SESSION_SECRET invalidates every stored hash, exactly as it
+ * invalidates every stored access token.
+ */
+export function hashEmail(email: string): string {
+  const normalized = email.trim().toLowerCase();
+  return createHmac('sha256', KEY).update(normalized).digest('hex');
 }
 
 export function constantTimeEqual(a: string, b: string): boolean {

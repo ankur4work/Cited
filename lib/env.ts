@@ -131,8 +131,29 @@ const BUILD_STUB: Env = {
   ANALYTICS_PIXEL_DEFAULT_ENABLED: true,
 };
 
+/**
+ * Treat an empty env var as unset.
+ *
+ * `SENTRY_DSN=` in a .env file yields '' rather than undefined, so an
+ * `.optional()` field still runs its format check against the empty string
+ * and fails. Every commented-out-but-present key would otherwise be a boot
+ * crash — and one that hides until runtime, because the build path uses
+ * BUILD_STUB instead of validating.
+ *
+ * Only keys we actually declare are copied through, so unrelated process
+ * environment does not leak into the parsed config.
+ */
+function withoutEmptyStrings(source: NodeJS.ProcessEnv): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(EnvSchema.shape)) {
+    const value = source[key];
+    if (value !== undefined && value !== '') out[key] = value;
+  }
+  return out;
+}
+
 function loadEnv(): Env {
-  const parsed = EnvSchema.safeParse(process.env);
+  const parsed = EnvSchema.safeParse(withoutEmptyStrings(process.env));
   if (!parsed.success) {
     if (process.env.NEXT_PHASE === 'phase-production-build') {
       return BUILD_STUB;

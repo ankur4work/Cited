@@ -14,13 +14,26 @@
  */
 
 /** Matches `client_id` in shopify.app.toml. Public identifier — safe to commit. */
-export const APP_CLIENT_ID = '0546f9515e4b670f341c8ffc92e2de06';
+export const APP_CLIENT_ID = 'd7e7cc14dd8022014fdaff06422f2542';
 
-/** Host portion of `application_url` in shopify.app.toml (no scheme, no path). */
-export const APP_HOST = 'gapfinder.solnix.store';
+/**
+ * Host portion of `application_url` in shopify.app.toml (no scheme, no path).
+ *
+ * TODO: placeholder following the existing solnix.store convention. Change
+ * this together with shopify.app.toml and the Coolify env when the real
+ * domain is live.
+ */
+export const APP_HOST = 'cited.solnix.store';
 
-/** Matches `access_scopes.scopes` in shopify.app.toml. Order-insensitive. */
-export const APP_SCOPES = 'read_orders,read_products,read_content,read_themes,write_script_tags';
+/**
+ * Matches `access_scopes.scopes` in shopify.app.toml. Order-insensitive.
+ *
+ * `write_product_reviews` is absent on purpose: it is restricted to
+ * Shopify-approved review apps, so before approval the granted scope set
+ * legitimately differs from the eventual one. Add it here at the same time
+ * it is added to shopify.app.toml, or this check will fail every deploy.
+ */
+export const APP_SCOPES = 'read_products,read_orders,read_customers,read_metaobjects';
 
 /** Normalize a comma-separated scope string for order-insensitive comparison. */
 function normalizeScopes(raw: string): string {
