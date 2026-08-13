@@ -1,0 +1,60 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# next.js
+.next/
+out/
+build/
+dist/
+
+# production
+*.tsbuildinfo
+next-env.d.ts
+
+# env — NEVER commit. All real credentials live here.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!.shopify/*.pem.example
+
+# shopify cli
+.shopify/
+!.shopify/.gitkeep
+
+# prisma
+prisma/*.db
+prisma/*.db-journal
+
+# testing
+coverage/
+.nyc_output/
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+logs/
+
+# editor / os
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# misc
+.turbo/
+.cache/
+tmp/
+scratch/
+
+# local uploads / media fixtures
+uploads/
+media-tmp/

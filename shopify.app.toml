@@ -1,0 +1,62 @@
+_comment = "Cited — Product Reviews & AI Visibility"
+
+client_id = "d7e7cc14dd8022014fdaff06422f2542"
+name = "Cited"
+handle = "cited"
+application_url = "https://localhost:3000"
+embedded = true
+
+[access_scopes]
+# Base scopes, granted at install.
+#
+# `write_product_reviews` is deliberately NOT here. The standard
+# `product_review` metaobject is a RESTRICTED definition, granted only
+# after Shopify approves the app as a product review app via
+# Partner Dashboard → Partners Internal → API Access. Requesting it
+# before approval fails the install. Append it once granted.
+# See PLAN.md §5.2.1.
+scopes = "read_products,read_orders,read_customers,read_metaobjects"
+use_legacy_install_flow = false
+
+[auth]
+redirect_urls = [
+  "https://localhost:3000/api/auth/callback",
+  "https://localhost:3000/api/auth/shopify/callback",
+]
+
+[webhooks]
+api_version = "2025-07"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/api/webhooks/app-uninstalled"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app_subscriptions/update" ]
+  uri = "/api/webhooks/app-subscriptions-update"
+
+  # Drives the review-request engine.
+  [[webhooks.subscriptions]]
+  topics = [ "orders/fulfilled", "orders/paid" ]
+  uri = "/api/webhooks/orders"
+
+  # Keeps the local product mirror and rating metafields in step.
+  [[webhooks.subscriptions]]
+  topics = [ "products/create", "products/update", "products/delete" ]
+  uri = "/api/webhooks/products"
+
+  [[webhooks.subscriptions]]
+  compliance_topics = [
+    "customers/data_request",
+    "customers/redact",
+    "shop/redact",
+  ]
+  uri = "/api/webhooks/privacy"
+
+[pos]
+embedded = false
+
+[build]
+automatically_update_urls_on_dev = true
+dev_store_url = ""
+include_config_on_deploy = true

@@ -1,0 +1,660 @@
+// Cited — Product Reviews & AI Visibility
+//
+// Design notes:
+//  * Multi-tenancy: EVERY tenant-owned row carries storeId and is indexed on
+//    it. Isolation is enforced at the Prisma middleware layer (lib/prisma.ts),
+//    not by developer discipline. See PLAN.md §5.4.8.
+//  * Review mirrors Shopify's standard `product_review` metaobject field set
+//    (PLAN.md §5.2.1) so syndication is a field copy, not a translation.
+//    Syndicating every valid review is MANDATORY for approved review apps.
+//  * Postgres is the source of truth; Shopify metaobjects are a derived,
+//    eventually-consistent projection tracked by syncStatus/syncedAt.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgvector(map: "vector")]
+}
+
+// ─────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────
+
+enum Plan {
+  FREE
+  CONVERT // $19 — conversion layer
+  INTEL // $49 — intelligence & AEO layer
+}
+
+enum ReviewStatus {
+  PENDING // awaiting moderation
+  PUBLISHED
+  HIDDEN // merchant-hidden
+  SPAM // auto- or manually flagged
+  DELETED // soft delete, retained for audit until purge
+}
+
+/// Mirrors the metaobject's `app_verification_status` field exactly.
+enum VerificationStatus {
+  VERIFIED_BUYER
+  VERIFIED_REVIEWER
+  UNVERIFIED
+}
+
+enum ReviewSource {
+  NATIVE // collected by us
+  IMPORT // migrated from another app
+  SYNDICATED // pulled from a marketplace
+  MANUAL // merchant-entered
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
+enum ModerationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// Tracks projection into Shopify metaobjects. Sync is async and retryable.
+enum SyncStatus {
+  PENDING
+  SYNCED
+  FAILED
+  SKIPPED // e.g. not published, or restricted scope not yet granted
+}
+
+enum ImportSource {
+  JUDGE_ME
+  LOOX
+  YOTPO
+  OKENDO
+  STAMPED
+  FERA
+  AMAZON
+  ETSY
+  ALIEXPRESS
+  SHOPIFY_METAOBJECT
+  CSV
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  PAUSED
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum CampaignTrigger {
+  ORDER_FULFILLED
+  ORDER_DELIVERED
+  ORDER_PAID
+  MANUAL
+}
+
+enum SendStatus {
+  SCHEDULED
+  SENT
+  BOUNCED
+  COMPLAINED
+  SUPPRESSED
+  FAILED
+  CANCELLED
+}
+
+enum InsightType {
+  DEFECT
+  SIZING
+  DEMAND
+  PRAISE
+  SHIPPING
+  SUPPORT
+}
+
+enum AeoEngine {
+  CHATGPT
+  GEMINI
+  PERPLEXITY
+  CLAUDE
+  GOOGLE_AI_OVERVIEW
+}
+
+// ─────────────────────────────────────────────────────────────
+// Tenant
+// ─────────────────────────────────────────────────────────────
+
+model Store {
+  id          String  @id @default(cuid())
+  shopDomain  String  @unique
+  shopifyGid  String?
+  name        String?
+  email       String?
+  countryCode String?
+  currency    String?
+  timezone    String  @default("UTC")
+  primaryLocale String @default("en")
+
+  /// AES-256-GCM ciphertext (lib/crypto.ts). Never logged, never returned.
+  accessToken String?
+  scopes      String?
+
+  /// True once Shopify grants `write_product_reviews`. Until then the
+  /// metaobject projection is SKIPPED and we render from our own data.
+  /// See PLAN.md §5.2.1.
+  reviewScopeGranted Boolean @default(false)
+
+  plan               Plan      @default(FREE)
+  subscriptionGid    String?
+  planUpdatedAt      DateTime?
+  installedAt        DateTime  @default(now())
+  uninstalledAt      DateTime?
+
+  onboardingStep     String   @default("connect")
+  onboardingComplete Boolean  @default(false)
+
+  /// Merchant-toggleable. Competitors cannot disable their pixel without
+  /// uninstalling (PLAN.md §2 W5); ours is a switch and a selling point.
+  analyticsPixelEnabled Boolean @default(true)
+  gdprMode              Boolean @default(false)
+
+  settings Json @default("{}")
+
+  mediaBytesUsed BigInt @default(0)
+  aiCentsUsedMtd Int    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products     Product[]
+  reviews      Review[]
+  reviewGroups ReviewGroup[]
+  questions    Question[]
+  campaigns    RequestCampaign[]
+  sends        RequestSend[]
+  importJobs   ImportJob[]
+  summaries    Summary[]
+  insights     Insight[]
+  aeoProbes    AeoProbe[]
+  suppressions Suppression[]
+  webhookEvents WebhookEvent[]
+  media        ReviewMedia[]
+
+  @@index([plan])
+  @@index([uninstalledAt])
+  @@map("stores")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Catalog
+// ─────────────────────────────────────────────────────────────
+
+model Product {
+  id         String  @id @default(cuid())
+  storeId    String
+  shopifyGid String
+  handle     String
+  title      String
+  imageUrl   String?
+  status     String?
+
+  /// Denormalised aggregates. Mirrored to Shopify's required
+  /// `reviews.rating` / `reviews.rating_count` product metafields.
+  ratingAvg   Float @default(0)
+  ratingCount Int   @default(0)
+  /// Histogram: {"1":n,"2":n,...}. Powers filtering without a scan.
+  ratingBreakdown Json @default("{}")
+
+  groupId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  store   Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  group   ReviewGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  reviews Review[]
+  questions Question[]
+  summaries Summary[]
+
+  @@unique([storeId, shopifyGid])
+  @@index([storeId, handle])
+  @@index([storeId, groupId])
+  @@map("products")
+}
+
+/// Lets several products share one review pool (variants, bundles, relaunches).
+model ReviewGroup {
+  id      String @id @default(cuid())
+  storeId String
+  name    String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  store    Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@index([storeId])
+  @@map("review_groups")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Reviews
+// ─────────────────────────────────────────────────────────────
+
+model Review {
+  id        String @id @default(cuid())
+  storeId   String
+  productId String
+
+  // ── Standard metaobject fields ─────────────────────────────
+  rating    Int // 1..5, projected as {scale_min,scale_max,value}
+  title     String?
+  body      String?
+  authorName String?
+  /// Encrypted at rest; never rendered. Hash is used for dedup/lookup.
+  authorEmailEnc  String?
+  authorEmailHash String?
+
+  orderShopifyGid   String?
+  variantShopifyGid String?
+
+  merchantReply   String?
+  merchantRepliedAt DateTime?
+
+  language String @default("en")
+
+  submittedAt DateTime  @default(now())
+  publishedAt DateTime?
+
+  verification VerificationStatus @default(UNVERIFIED)
+  source       ReviewSource       @default(NATIVE)
+  /// Free-text provenance for the metaobject `source` field, e.g.
+  /// "cited" or "cited:import:judge_me".
+  sourceLabel  String             @default("cited")
+
+  status ReviewStatus @default(PENDING)
+
+  // ── Shopify projection ─────────────────────────────────────
+  metaobjectGid String?    @unique
+  syncStatus    SyncStatus @default(PENDING)
+  syncedAt      DateTime?
+  syncError     String?
+  syncAttempts  Int        @default(0)
+
+  // ── Anti-abuse ─────────────────────────────────────────────
+  ipHash        String?
+  userAgentHash String?
+  fraudScore    Float   @default(0)
+  fraudReasons  String[] @default([])
+
+  helpfulCount    Int @default(0)
+  notHelpfulCount Int @default(0)
+
+  /// Semantic embedding for clustering, dedup and insight mining.
+  /// 384 dims (MiniLM) — kept local to avoid per-review API cost.
+  embedding Unsupported("vector(384)")?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  store      Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product    Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  media      ReviewMedia[]
+  attributes ReviewAttribute[]
+  votes      ReviewVote[]
+
+  @@index([storeId, productId, status, publishedAt(sort: Desc)])
+  @@index([storeId, status, submittedAt(sort: Desc)])
+  @@index([storeId, syncStatus])
+  @@index([storeId, rating])
+  @@index([authorEmailHash])
+  @@index([orderShopifyGid])
+  @@map("reviews")
+}
+
+model ReviewMedia {
+  id       String    @id @default(cuid())
+  storeId  String
+  reviewId String
+  type     MediaType
+
+  /// Object key in Cloudflare R2. Zero-egress is why R2 and not S3 —
+  /// media bandwidth is the largest variable cost line (PLAN.md §5.4.2).
+  r2Key       String
+  posterKey   String?
+  width       Int?
+  height      Int?
+  durationSec Int?
+  bytes       BigInt  @default(0)
+  mimeType    String?
+
+  moderation ModerationStatus @default(PENDING)
+  position   Int              @default(0)
+
+  createdAt DateTime @default(now())
+
+  store  Store  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
+  @@index([reviewId, position])
+  @@map("review_media")
+}
+
+/// Structured reviewer attributes (fit=true_to_size, skin_type=dry).
+/// Powers cohort analytics and the Klaviyo profile-property push —
+/// the capability Okendo gates at $119/mo (PLAN.md §4.3).
+model ReviewAttribute {
+  id       String @id @default(cuid())
+  storeId  String
+  reviewId String
+  key      String
+  value    String
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@unique([reviewId, key])
+  @@index([storeId, key, value])
+  @@map("review_attributes")
+}
+
+model ReviewVote {
+  id        String  @id @default(cuid())
+  reviewId  String
+  voterHash String
+  helpful   Boolean
+
+  createdAt DateTime @default(now())
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@unique([reviewId, voterHash])
+  @@map("review_votes")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Q&A
+// ─────────────────────────────────────────────────────────────
+
+model Question {
+  id        String  @id @default(cuid())
+  storeId   String
+  productId String
+  body      String
+  askerName String?
+  askerEmailEnc String?
+  status    ReviewStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  store   Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  answers Answer[]
+
+  @@index([storeId, productId, status])
+  @@map("questions")
+}
+
+model Answer {
+  id         String @id @default(cuid())
+  questionId String
+  body       String
+  /// merchant | ai | review
+  authorType String @default("merchant")
+  /// Review IDs backing an AI answer. An AI answer with no citations is
+  /// never shown — we do not let the model assert unbacked claims about a
+  /// merchant's product (PLAN.md §4.2).
+  citations  String[] @default([])
+
+  createdAt DateTime @default(now())
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([questionId])
+  @@map("answers")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Review request engine
+// ─────────────────────────────────────────────────────────────
+
+model RequestCampaign {
+  id      String @id @default(cuid())
+  storeId String
+  name    String
+
+  trigger    CampaignTrigger @default(ORDER_FULFILLED)
+  delayHours Int             @default(168)
+
+  subject      String
+  templateKey  String @default("default")
+  templateJson Json   @default("{}")
+
+  /// One follow-up by default; 0 disables.
+  reminderCount      Int @default(1)
+  reminderDelayHours Int @default(168)
+
+  enabled Boolean @default(false)
+
+  /// Sends above SEND_SAFETY_GATE_THRESHOLD require explicit confirmation
+  /// before dispatch. Directly targets competitor failure W4 (PLAN.md §2):
+  /// 3,620 emails sent on a default template without merchant approval.
+  requiresConfirmation Boolean   @default(true)
+  confirmedAt          DateTime?
+  confirmedBy          String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  store Store         @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  sends RequestSend[]
+
+  @@index([storeId, enabled])
+  @@map("request_campaigns")
+}
+
+model RequestSend {
+  id         String @id @default(cuid())
+  storeId    String
+  campaignId String
+
+  orderShopifyGid String
+  emailHash       String
+  emailEnc        String?
+
+  status      SendStatus @default(SCHEDULED)
+  scheduledAt DateTime
+  sentAt      DateTime?
+  openedAt    DateTime?
+  clickedAt   DateTime?
+  /// Set when this send produced a review — the only metric that matters.
+  convertedAt DateTime?
+
+  reminderIndex Int     @default(0)
+  providerId    String?
+  failureReason String?
+
+  createdAt DateTime @default(now())
+
+  store    Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  campaign RequestCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  /// One send per order per reminder step — the idempotency guard that
+  /// makes duplicate-blast bugs structurally impossible.
+  @@unique([campaignId, orderShopifyGid, reminderIndex])
+  @@index([storeId, status, scheduledAt])
+  @@index([emailHash])
+  @@map("request_sends")
+}
+
+/// Hard suppression list. Global per store; never emailed again.
+model Suppression {
+  id        String @id @default(cuid())
+  storeId   String
+  emailHash String
+  reason    String
+
+  createdAt DateTime @default(now())
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, emailHash])
+  @@map("suppressions")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Migration / import
+// ─────────────────────────────────────────────────────────────
+
+/// The beachhead (PLAN.md §2 W3). Must be chunked, resumable and
+/// idempotent — the incumbent loses merchant work past 50 rows.
+model ImportJob {
+  id      String       @id @default(cuid())
+  storeId String
+  source  ImportSource
+  status  JobStatus    @default(QUEUED)
+
+  totalRows     Int @default(0)
+  processedRows Int @default(0)
+  importedRows  Int @default(0)
+  failedRows    Int @default(0)
+  skippedRows   Int @default(0)
+
+  /// Cursor for resume. A crash must never cost the merchant progress.
+  resumeCursor String?
+
+  /// Product-matching decisions: SKU → handle → title → manual override.
+  /// Reference fields must resolve BEFORE metaobject write, since the
+  /// standard definition rejects dangling references (PLAN.md §5.2.1).
+  mappingJson Json @default("{}")
+  /// Post-import diff: what landed, what didn't, and why.
+  reportJson  Json @default("{}")
+
+  /// Preview-before-commit. Nothing is written until the merchant approves.
+  previewOnly Boolean @default(true)
+  committedAt DateTime?
+
+  sourceFileKey String?
+  errorMessage  String?
+
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, status])
+  @@map("import_jobs")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Intelligence layer
+// ─────────────────────────────────────────────────────────────
+
+model Summary {
+  id        String @id @default(cuid())
+  storeId   String
+  productId String
+
+  model       String
+  /// {pros[], cons[], attributes{}, themes[], sentiment}
+  contentJson Json
+  /// Regenerated when review count drifts materially past this.
+  reviewCountAtGen Int
+  costCents        Int @default(0)
+
+  generatedAt DateTime @default(now())
+
+  store   Store   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId])
+  @@index([storeId])
+  @@map("summaries")
+}
+
+/// Mined merchandising/CX signal, e.g. "17 reviews mention zipper
+/// failure on SKU-882 since March". The corpus nobody else reads.
+model Insight {
+  id      String      @id @default(cuid())
+  storeId String
+  type    InsightType
+
+  title       String
+  description String
+  severity    Int      @default(0) // 0..100
+  reviewIds   String[] @default([])
+  clusterJson Json     @default("{}")
+
+  acknowledged Boolean @default(false)
+  detectedAt   DateTime @default(now())
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, type, detectedAt(sort: Desc)])
+  @@index([storeId, acknowledged])
+  @@map("insights")
+}
+
+/// AI-answer-engine visibility probe — the Layer 3 wedge. Tracks whether
+/// a merchant's products surface in AI shopping answers, where, and
+/// against whom. Yotpo sells this at enterprise price (PLAN.md §4.3).
+model AeoProbe {
+  id      String    @id @default(cuid())
+  storeId String
+  engine  AeoEngine
+  prompt  String
+
+  mentioned   Boolean  @default(false)
+  position    Int?
+  sentiment   Float?
+  competitors String[] @default([])
+  citedUrls   String[] @default([])
+  rawResponse String?
+
+  ranAt DateTime @default(now())
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, engine, ranAt(sort: Desc)])
+  @@map("aeo_probes")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Platform
+// ─────────────────────────────────────────────────────────────
+
+/// Shopify redelivers webhooks. This table makes processing idempotent.
+model WebhookEvent {
+  id        String  @id @default(cuid())
+  storeId   String?
+  topic     String
+  shopifyId String
+  payload   Json?
+
+  processedAt DateTime?
+  failedAt    DateTime?
+  attempts    Int       @default(0)
+  error       String?
+
+  createdAt DateTime @default(now())
+
+  store Store? @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([topic, shopifyId])
+  @@index([storeId, topic])
+  @@index([processedAt])
+  @@map("webhook_events")
+}

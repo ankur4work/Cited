@@ -1,0 +1,72 @@
+{% comment %}
+  Accessible star rating, rendered as inline SVG.
+
+  Inline rather than an icon font or image sprite so it costs zero network
+  requests and cannot flash unstyled. Partial fill uses a clip so a 4.3
+  average reads honestly instead of rounding up to 5 — over-rounding star
+  displays is a real trust problem and, at scale, a structured-data
+  mismatch against the numeric value we emit in JSON-LD.
+
+  Params:
+    rating    — number, e.g. 4.3
+    scale_max — integer, usually 5
+{% endcomment %}
+
+{%- liquid
+  assign r = rating | default: 0 | times: 1.0
+  assign max = scale_max | default: 5 | plus: 0
+  assign pct = 0
+  if max > 0
+    assign pct = r | divided_by: max | times: 100
+  endif
+  assign uid = 'cited-star-' | append: pct | append: '-' | append: max
+-%}
+
+<span
+  class="cited-stars"
+  role="img"
+  aria-label="{{ r | round: 1 }} out of {{ max }} stars"
+>
+  {%- for i in (1..max) -%}
+    {%- liquid
+      assign filled = false
+      if i <= r
+        assign filled = true
+      endif
+      assign partial = false
+      assign prev = i | minus: 1
+      if filled == false and r > prev and r < i
+        assign partial = true
+        assign frac = r | minus: prev | times: 100
+      endif
+    -%}
+    {%- if partial -%}
+      <svg class="cited-stars__star cited-stars__star--on" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" focusable="false">
+        <defs>
+          <linearGradient id="{{ uid }}-{{ i }}">
+            <stop offset="{{ frac }}%" stop-color="currentColor"/>
+            <stop offset="{{ frac }}%" stop-color="var(--cited-border, #e5e7eb)"/>
+          </linearGradient>
+        </defs>
+        <path
+          fill="url(#{{ uid }}-{{ i }})"
+          d="M10 1.6l2.6 5.2 5.8.85-4.2 4.1 1 5.75L10 14.8l-5.2 2.7 1-5.75L1.6 7.65l5.8-.85z"
+        />
+      </svg>
+    {%- else -%}
+      <svg
+        class="cited-stars__star{% if filled %} cited-stars__star--on{% endif %}"
+        viewBox="0 0 20 20"
+        width="16"
+        height="16"
+        aria-hidden="true"
+        focusable="false"
+      >
+        <path
+          fill="currentColor"
+          d="M10 1.6l2.6 5.2 5.8.85-4.2 4.1 1 5.75L10 14.8l-5.2 2.7 1-5.75L1.6 7.65l5.8-.85z"
+        />
+      </svg>
+    {%- endif -%}
+  {%- endfor -%}
+</span>

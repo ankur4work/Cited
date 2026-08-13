@@ -1,0 +1,102 @@
+# Local development stack for Cited.
+#
+# Ports are deliberately offset from the searchgap stack (5432/6379/3000)
+# so both projects can run on this machine at the same time.
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: cited-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cited
+      POSTGRES_PASSWORD: cited
+      POSTGRES_DB: cited
+    ports:
+      - "5433:5432"
+    volumes:
+      - cited_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cited -d cited"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: cited-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6380:6379"
+    volumes:
+      - cited_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # MinIO stands in for Cloudflare R2 locally — both are S3-compatible,
+  # so the same client code runs in dev and prod.
+  minio:
+    image: minio/minio:latest
+    container_name: cited-minio
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: cited
+      MINIO_ROOT_PASSWORD: citedcited
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - cited_miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: cited-app
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgresql://cited:cited@postgres:5432/cited?schema=public
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "3001:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    profiles: ["full"]
+
+  worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: cited-worker
+    restart: unless-stopped
+    command: ["node", "--import", "tsx", "jobs/worker.ts"]
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgresql://cited:cited@postgres:5432/cited?schema=public
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    profiles: ["full"]
+
+volumes:
+  cited_pgdata:
+  cited_redisdata:
+  cited_miniodata:

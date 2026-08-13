@@ -1,0 +1,28 @@
+title = "SearchGap gitleaks config"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "shopify-access-token"
+description = "Shopify offline access token"
+regex = '''shpat_[A-Za-z0-9]{32,}'''
+tags = ["shopify", "token"]
+
+[[rules]]
+id = "shopify-api-secret"
+description = "Shopify API secret (SHA1-style)"
+regex = '''shpss_[A-Za-z0-9]{32,}'''
+tags = ["shopify", "secret"]
+
+[allowlist]
+description = "Allowlisted paths (fixtures, docs)"
+paths = [
+  '''tests/fixtures/.*''',
+  '''.env.example''',
+  '''docs/.*''',
+]
+regexes = [
+  '''shpat_dev_fake_token_for_ui_only''',
+  '''example\.test''',
+]

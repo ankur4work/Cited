@@ -1,0 +1,483 @@
+{% comment %}
+  Cited — server-rendered product reviews.
+
+  This is the core architectural differentiator (PLAN.md §5.2). Every
+  competitor ships a JavaScript widget, which means layout shift, a late
+  network round-trip, and review body text that crawlers and AI ingestion
+  pipelines frequently never see.
+
+  This block renders reviews inside Shopify's own HTML response:
+    * zero JavaScript on first paint
+    * zero cumulative layout shift
+    * zero external requests
+    * review text present in raw HTML for Google and AI answer engines
+
+  JS only ever *enhances* — pagination, filtering, media lightbox — and is
+  loaded lazily. With JS disabled the block still renders and still ranks.
+
+  Data source: the standard `product_review` metaobject, plus the
+  Shopify-mandated `reviews.rating` / `reviews.rating_count` product
+  metafields that approved review apps must maintain.
+
+  TODO(verify-in-dev-store): confirm the exact storefront read path for the
+  review list. Community sources indicate
+  `product.metafields.reviews.product_reviews`. The aggregate metafields are
+  documented and certain. Until the list path is confirmed against a real
+  theme, `reviews_list` resolves defensively and the block degrades to the
+  aggregate-only view rather than erroring. See PLAN.md §5.2.1 open item.
+
+  CSS is scoped entirely under .cited-reviews and driven by custom
+  properties. There are NO global selectors and NO element resets — the
+  most common competitor complaint is a review widget breaking the theme's
+  buy buttons (PLAN.md §2, W1). This block cannot reach outside itself.
+{% endcomment %}
+
+{%- liquid
+  assign rating_field = product.metafields.reviews.rating
+  assign count_field = product.metafields.reviews.rating_count
+
+  assign rating_avg = 0
+  if rating_field != blank and rating_field.value != blank
+    assign rating_avg = rating_field.value.rating | times: 1.0
+  endif
+
+  assign rating_count = 0
+  if count_field != blank
+    assign rating_count = count_field.value | plus: 0
+  endif
+
+  assign reviews_list = product.metafields.reviews.product_reviews.value
+  assign per_page = block.settings.reviews_per_page | default: 10
+
+  assign scale_max = 5
+  if rating_field != blank and rating_field.value.scale_max != blank
+    assign scale_max = rating_field.value.scale_max | plus: 0
+  endif
+
+  assign has_reviews = false
+  if rating_count > 0
+    assign has_reviews = true
+  endif
+-%}
+
+<section
+  class="cited-reviews"
+  id="cited-reviews-{{ block.id }}"
+  data-cited-product="{{ product.id }}"
+  data-cited-per-page="{{ per_page }}"
+  style="
+    --cited-star: {{ block.settings.star_color }};
+    --cited-text: {{ block.settings.text_color }};
+    --cited-muted: {{ block.settings.muted_color }};
+    --cited-border: {{ block.settings.border_color }};
+    --cited-radius: {{ block.settings.corner_radius }}px;
+    --cited-gap: {{ block.settings.spacing }}px;
+  "
+  {{ block.shopify_attributes }}
+>
+  {%- if block.settings.heading != blank -%}
+    <h2 class="cited-reviews__heading">{{ block.settings.heading | escape }}</h2>
+  {%- endif -%}
+
+  {%- comment -%} ── Aggregate summary ── {%- endcomment -%}
+  {%- if has_reviews -%}
+    <div class="cited-reviews__summary">
+      <div class="cited-reviews__score">
+        <span class="cited-reviews__score-value">{{ rating_avg | round: 1 }}</span>
+        <span class="cited-reviews__score-scale">/ {{ scale_max }}</span>
+      </div>
+
+      {%- render 'cited-stars', rating: rating_avg, scale_max: scale_max -%}
+
+      <p class="cited-reviews__count">
+        {%- if rating_count == 1 -%}
+          1 review
+        {%- else -%}
+          {{ rating_count }} reviews
+        {%- endif -%}
+      </p>
+    </div>
+  {%- else -%}
+    <div class="cited-reviews__empty">
+      <p>{{ block.settings.empty_text | escape }}</p>
+    </div>
+  {%- endif -%}
+
+  {%- comment -%}
+    ── Review list ──
+    Rendered server-side. Only the first page is emitted inline; further
+    pages are fetched by the enhancement script. The first page is what
+    matters for SEO and AI ingestion, so crawlability never depends on JS.
+  {%- endcomment -%}
+  {%- if reviews_list != blank -%}
+    <ol class="cited-reviews__list" role="list">
+      {%- for review in reviews_list limit: per_page -%}
+        {%- liquid
+          assign r_rating = 0
+          if review.rating != blank and review.rating.value != blank
+            assign r_rating = review.rating.value.rating | times: 1.0
+          endif
+          assign r_author = review.author | default: block.settings.anonymous_label
+          assign r_verified = false
+          if review.app_verification_status == 'verified_buyer'
+            assign r_verified = true
+          endif
+        -%}
+        <li class="cited-review">
+          <div class="cited-review__head">
+            {%- render 'cited-stars', rating: r_rating, scale_max: scale_max -%}
+            {%- if review.title != blank -%}
+              <h3 class="cited-review__title">{{ review.title | escape }}</h3>
+            {%- endif -%}
+          </div>
+
+          <div class="cited-review__meta">
+            <span class="cited-review__author">{{ r_author | escape }}</span>
+            {%- if r_verified -%}
+              <span class="cited-review__verified" title="Verified buyer">
+                <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
+                  <path fill="currentColor" d="M6.2 11.3 3.5 8.6l1.1-1.1 1.6 1.6 4.2-4.2 1.1 1.1z"/>
+                </svg>
+                Verified buyer
+              </span>
+            {%- endif -%}
+            {%- if review.submitted_at != blank -%}
+              <time class="cited-review__date" datetime="{{ review.submitted_at | date: '%Y-%m-%d' }}">
+                {{ review.submitted_at | date: format: 'abbreviated_date' }}
+              </time>
+            {%- endif -%}
+          </div>
+
+          {%- if review.body != blank -%}
+            <div class="cited-review__body">{{ review.body | escape | newline_to_br }}</div>
+          {%- endif -%}
+
+          {%- if block.settings.show_media and review.media_urls != blank -%}
+            <div class="cited-review__media">
+              {%- for media_url in review.media_urls limit: 4 -%}
+                <img
+                  class="cited-review__media-item"
+                  src="{{ media_url }}"
+                  alt="Customer photo from a review by {{ r_author | escape }}"
+                  loading="lazy"
+                  decoding="async"
+                  width="88"
+                  height="88"
+                >
+              {%- endfor -%}
+            </div>
+          {%- endif -%}
+
+          {%- if review.merchant_reply != blank -%}
+            <div class="cited-review__reply">
+              <span class="cited-review__reply-label">{{ shop.name | escape }} replied</span>
+              <p>{{ review.merchant_reply | escape | newline_to_br }}</p>
+            </div>
+          {%- endif -%}
+        </li>
+      {%- endfor -%}
+    </ol>
+
+    {%- if rating_count > per_page -%}
+      {%- comment -%}
+        Enhancement target. Server-rendered as a plain link to the
+        all-reviews page so it still works with JS disabled; the script
+        upgrades it to in-place pagination.
+      {%- endcomment -%}
+      <a
+        class="cited-reviews__more"
+        href="{{ product.url }}#cited-reviews-{{ block.id }}"
+        data-cited-more
+      >
+        {{ block.settings.load_more_text | escape }}
+      </a>
+    {%- endif -%}
+  {%- endif -%}
+</section>
+
+{%- comment -%}
+  ── Structured data ──
+  Emitted only when reviews actually exist. Emitting AggregateRating with
+  zero reviews is a Google structured-data violation and a fast route to a
+  manual action — which for a merchant means a 1-star app review
+  (PLAN.md §5.4.5).
+
+  @id is pinned to the canonical product URL so search engines MERGE this
+  with the theme's existing Product node rather than treating it as a
+  second, competing product entity.
+{%- endcomment -%}
+{%- if has_reviews and block.settings.enable_jsonld -%}
+  {%- capture cited_jsonld -%}
+  {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    "@id": {{ shop.url | append: product.url | json }},
+    "name": {{ product.title | json }},
+    "aggregateRating": {
+      "@type": "AggregateRating",
+      "ratingValue": {{ rating_avg | round: 2 | json }},
+      "reviewCount": {{ rating_count | json }},
+      "bestRating": {{ scale_max | json }},
+      "worstRating": 1
+    }
+    {%- if reviews_list != blank -%}
+    ,"review": [
+      {%- for review in reviews_list limit: 5 -%}
+        {%- liquid
+          assign r_rating = 0
+          if review.rating != blank and review.rating.value != blank
+            assign r_rating = review.rating.value.rating | times: 1.0
+          endif
+        -%}
+        {
+          "@type": "Review",
+          "reviewRating": {
+            "@type": "Rating",
+            "ratingValue": {{ r_rating | round: 1 | json }},
+            "bestRating": {{ scale_max | json }},
+            "worstRating": 1
+          },
+          "author": {
+            "@type": "Person",
+            "name": {{ review.author | default: 'Anonymous' | json }}
+          }
+          {%- if review.body != blank -%}
+          ,"reviewBody": {{ review.body | json }}
+          {%- endif -%}
+          {%- if review.submitted_at != blank -%}
+          ,"datePublished": {{ review.submitted_at | date: '%Y-%m-%d' | json }}
+          {%- endif -%}
+        }{%- unless forloop.last -%},{%- endunless -%}
+      {%- endfor -%}
+    ]
+    {%- endif -%}
+  }
+  {%- endcapture -%}
+  <script type="application/ld+json">{{ cited_jsonld }}</script>
+{%- endif -%}
+
+{% stylesheet %}
+/*
+ * Scoped entirely under .cited-reviews. No global selectors, no resets,
+ * no element-level rules. This block cannot affect the host theme.
+ */
+.cited-reviews {
+  --cited-star: #ffb800;
+  --cited-text: #1a1a1a;
+  --cited-muted: #6b7280;
+  --cited-border: #e5e7eb;
+  --cited-radius: 8px;
+  --cited-gap: 16px;
+
+  color: var(--cited-text);
+  display: block;
+  margin-block: calc(var(--cited-gap) * 2);
+}
+
+.cited-reviews__heading {
+  font-size: 1.25rem;
+  line-height: 1.3;
+  margin: 0 0 var(--cited-gap);
+}
+
+.cited-reviews__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--cited-gap);
+  flex-wrap: wrap;
+  padding-bottom: var(--cited-gap);
+  border-bottom: 1px solid var(--cited-border);
+}
+
+.cited-reviews__score {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.cited-reviews__score-value { font-size: 2rem; font-weight: 700; line-height: 1; }
+.cited-reviews__score-scale { font-size: 0.875rem; color: var(--cited-muted); }
+.cited-reviews__count { margin: 0; font-size: 0.875rem; color: var(--cited-muted); }
+.cited-reviews__empty { padding: var(--cited-gap) 0; color: var(--cited-muted); }
+
+.cited-reviews__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--cited-gap);
+}
+
+.cited-review {
+  padding: var(--cited-gap) 0;
+  border-bottom: 1px solid var(--cited-border);
+}
+
+.cited-review__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cited-review__title { font-size: 1rem; font-weight: 600; margin: 0; }
+
+.cited-review__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+  font-size: 0.8125rem;
+  color: var(--cited-muted);
+}
+
+.cited-review__verified {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: #0a7c42;
+  font-weight: 500;
+}
+
+.cited-review__body { margin-top: 8px; line-height: 1.6; }
+
+.cited-review__media { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+.cited-review__media-item {
+  width: 88px;
+  height: 88px;
+  object-fit: cover;
+  border-radius: var(--cited-radius);
+  border: 1px solid var(--cited-border);
+}
+
+.cited-review__reply {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: var(--cited-radius);
+  font-size: 0.875rem;
+}
+
+.cited-review__reply-label { font-weight: 600; display: block; margin-bottom: 2px; }
+.cited-review__reply p { margin: 0; }
+
+.cited-reviews__more {
+  display: inline-block;
+  margin-top: var(--cited-gap);
+  padding: 8px 16px;
+  border: 1px solid var(--cited-border);
+  border-radius: var(--cited-radius);
+  color: inherit;
+  text-decoration: none;
+  font-size: 0.875rem;
+}
+
+.cited-stars { display: inline-flex; gap: 1px; line-height: 0; }
+.cited-stars svg { display: block; }
+.cited-stars__star { color: var(--cited-border); }
+.cited-stars__star--on { color: var(--cited-star); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .cited-reviews__more { transition: background-color 120ms ease; }
+}
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Cited Reviews",
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "Customer reviews"
+    },
+    {
+      "type": "range",
+      "id": "reviews_per_page",
+      "label": "Reviews shown initially",
+      "info": "Rendered server-side for SEO and AI crawlers. Higher values mean a larger HTML response.",
+      "min": 3,
+      "max": 25,
+      "step": 1,
+      "default": 10
+    },
+    {
+      "type": "checkbox",
+      "id": "show_media",
+      "label": "Show review photos",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "enable_jsonld",
+      "label": "Output structured data (JSON-LD)",
+      "info": "Enables star ratings in Google results and makes reviews readable by AI shopping assistants. Turn off only if another app already outputs review structured data.",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "empty_text",
+      "label": "Text shown when there are no reviews",
+      "default": "No reviews yet. Be the first to share your thoughts."
+    },
+    {
+      "type": "text",
+      "id": "anonymous_label",
+      "label": "Label for anonymous reviewers",
+      "default": "Anonymous"
+    },
+    {
+      "type": "text",
+      "id": "load_more_text",
+      "label": "Load more button text",
+      "default": "Show more reviews"
+    },
+    {
+      "type": "header",
+      "content": "Appearance"
+    },
+    {
+      "type": "color",
+      "id": "star_color",
+      "label": "Star colour",
+      "default": "#FFB800"
+    },
+    {
+      "type": "color",
+      "id": "text_color",
+      "label": "Text colour",
+      "default": "#1A1A1A"
+    },
+    {
+      "type": "color",
+      "id": "muted_color",
+      "label": "Secondary text colour",
+      "default": "#6B7280"
+    },
+    {
+      "type": "color",
+      "id": "border_color",
+      "label": "Border colour",
+      "default": "#E5E7EB"
+    },
+    {
+      "type": "range",
+      "id": "corner_radius",
+      "label": "Corner radius",
+      "min": 0,
+      "max": 24,
+      "step": 1,
+      "unit": "px",
+      "default": 8
+    },
+    {
+      "type": "range",
+      "id": "spacing",
+      "label": "Spacing",
+      "min": 8,
+      "max": 40,
+      "step": 2,
+      "unit": "px",
+      "default": 16
+    }
+  ]
+}
+{% endschema %}
