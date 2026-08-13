@@ -1,6 +1,7 @@
 import type { Plan, Store } from '@prisma/client';
 import { ShopifyClient } from './client';
 import { env } from '../env';
+import { logger } from '../logger';
 
 /**
  * Shopify App Pricing (formerly "Managed Pricing").
@@ -157,8 +158,25 @@ export async function fetchActiveSubscription(
 export function planFromSubscription(sub: ActiveSubscription | null): Plan {
   if (!sub || sub.status !== 'ACTIVE') return 'FREE';
   const name = sub.name.trim().toLowerCase();
+
   if (name === env.SHOPIFY_FREE_PLAN_NAME.trim().toLowerCase()) return 'FREE';
-  return 'GROWTH';
+
+  // Cited has two paid tiers, so a single "not free → paid" test is no longer
+  // enough. Match the invoice name, which the dashboard marks
+  // "Can't be changed later" and is therefore a stable identifier.
+  if (name.includes('intel')) return 'INTEL';
+  if (name.includes('convert')) return 'CONVERT';
+
+  // Unknown paid plan name — the dashboard was renamed without a code change.
+  // Fall back to the LOWEST paid tier rather than the highest: a merchant
+  // briefly missing a feature files a ticket we can fix, whereas silently
+  // granting $49 features to a $19 subscriber leaks margin and is invisible.
+  // Logged loudly so the mismatch surfaces instead of persisting.
+  logger.warn(
+    { subscriptionName: sub.name },
+    'Unrecognised subscription name — defaulting to CONVERT. Align the dashboard plan name.',
+  );
+  return 'CONVERT';
 }
 
 /**

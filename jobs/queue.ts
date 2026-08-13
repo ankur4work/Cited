@@ -2,27 +2,24 @@ import { Queue } from 'bullmq';
 import IORedis from 'ioredis';
 import { env } from '@/lib/env';
 
-export const connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null, lazyConnect: true });
+// `lazyConnect: true` — do NOT open a TCP connection at module import.
+// Next.js evaluates route modules during build-time analysis, when Redis
+// isn't running; an eager connect turns every build into a failure.
+export const connection = new IORedis(env.REDIS_URL, {
+  maxRetriesPerRequest: null,
+  lazyConnect: true,
+});
 
 export const QUEUES = {
   INGESTION: 'ingestion',
-  CLASSIFY: 'classify',
-  DIGEST: 'digest',
+  SYNDICATION: 'syndication',
+  EMAIL: 'email',
+  IMPORT: 'import',
+  AI: 'ai',
+  AEO: 'aeo',
   MAINTENANCE: 'maintenance',
   DLQ: 'dead-letter',
 } as const;
-
-export type IngestionJobName = 'ingest:search' | 'ingest:orders' | 'ingest:products';
-
-export interface IngestionJobData {
-  storeId: string;
-  /** For search: days backfill. For orders: window. Undefined → daily default. */
-  sinceDays?: number;
-  /** For products: skip the 24h guard. */
-  force?: boolean;
-  /** Cron-originated jobs carry this so processors know not to re-enqueue self. */
-  origin: 'install' | 'cron' | 'manual';
-}
 
 const defaultJobOptions = {
   attempts: 3,
@@ -31,51 +28,124 @@ const defaultJobOptions = {
   removeOnFail: { count: 1000, age: 30 * 86_400 },
 };
 
+// ── Catalog ingestion ────────────────────────────────────────
+export type IngestionJobName = 'ingest:products' | 'ingest:orders';
+
+export interface IngestionJobData {
+  storeId: string;
+  shopDomain: string;
+  sinceDays?: number;
+  force?: boolean;
+  origin: 'install' | 'cron' | 'manual' | 'webhook';
+}
+
 export const ingestionQueue = new Queue<IngestionJobData, unknown, IngestionJobName>(
   QUEUES.INGESTION,
   { connection, defaultJobOptions },
 );
 
-// DLQ accepts ANY shape of failed job (ingestion, classify, digest, future).
-// Typing loosely to `Record<string, unknown>` — downstream inspection reads
-// the raw payload; strict typing here would force every queue to match the
-// DLQ's type signature.
+// ── Metaobject syndication ───────────────────────────────────
+// Shopify REQUIRES approved review apps to mirror every valid review into
+// `product_review` metaobjects plus the rating/rating_count product
+// metafields. This queue owns that projection. Postgres stays the source of
+// truth; Shopify is eventually consistent behind it.
+export type SyndicationJobName =
+  | 'syndicate:review'
+  | 'syndicate:aggregate'
+  | 'syndicate:backfill';
+
+export interface SyndicationJobData {
+  storeId: string;
+  reviewId?: string;
+  productId?: string;
+}
+
+export const syndicationQueue = new Queue<SyndicationJobData, unknown, SyndicationJobName>(
+  QUEUES.SYNDICATION,
+  {
+    connection,
+    defaultJobOptions: {
+      ...defaultJobOptions,
+      // More attempts than default: this projection is a compliance
+      // obligation, not a nicety, so transient Admin API failures should
+      // keep retrying well past the point we'd give up on other work.
+      attempts: 6,
+    },
+  },
+);
+
+// ── Review request email ─────────────────────────────────────
+export type EmailJobName = 'email:request' | 'email:reminder' | 'email:schedule-batch';
+
+export interface EmailJobData {
+  storeId: string;
+  campaignId?: string;
+  sendId?: string;
+  orderShopifyGid?: string;
+}
+
+export const emailQueue = new Queue<EmailJobData, unknown, EmailJobName>(QUEUES.EMAIL, {
+  connection,
+  defaultJobOptions,
+});
+
+// ── Migration / import ───────────────────────────────────────
+export interface ImportJobData {
+  storeId: string;
+  importJobId: string;
+  /** Resume offset. Chunked so a crash never costs merchant progress. */
+  cursor?: string;
+}
+
+export const importQueue = new Queue<ImportJobData, unknown, 'import:process'>(QUEUES.IMPORT, {
+  connection,
+  // Imports are long and resumable; retrying the whole job on failure would
+  // redo work. The processor checkpoints its cursor and is re-enqueued
+  // explicitly instead.
+  defaultJobOptions: { ...defaultJobOptions, attempts: 1 },
+});
+
+// ── AI ───────────────────────────────────────────────────────
+export type AiJobName = 'ai:summarize-product' | 'ai:moderate-review' | 'ai:mine-insights';
+
+export interface AiJobData {
+  storeId: string;
+  productId?: string;
+  reviewId?: string;
+}
+
+export const aiQueue = new Queue<AiJobData, unknown, AiJobName>(QUEUES.AI, {
+  connection,
+  defaultJobOptions,
+});
+
+// ── AEO visibility probes ────────────────────────────────────
+export interface AeoJobData {
+  storeId: string;
+  promptSetId?: string;
+}
+
+export const aeoQueue = new Queue<AeoJobData, unknown, 'aeo:probe-store'>(QUEUES.AEO, {
+  connection,
+  defaultJobOptions,
+});
+
+// ── Maintenance ──────────────────────────────────────────────
+export const maintenanceQueue = new Queue<
+  Record<string, unknown>,
+  unknown,
+  'redact-purge' | 'media-lifecycle'
+>(QUEUES.MAINTENANCE, { connection, defaultJobOptions });
+
+// ── Dead letter ──────────────────────────────────────────────
+// Accepts ANY failed job shape. Typed loosely on purpose: strict typing here
+// would force every queue's payload to conform to the DLQ's signature.
 export interface DlqPayload extends Record<string, unknown> {
   storeId: string;
   originalError: string;
 }
 
-export const dlq = new Queue<DlqPayload, unknown, string>(
-  QUEUES.DLQ,
-  { connection, defaultJobOptions: { removeOnComplete: false, removeOnFail: false } },
-);
-
-export const maintenanceQueue = new Queue<Record<string, never>, unknown, 'redact-purge'>(
-  QUEUES.MAINTENANCE,
-  { connection, defaultJobOptions },
-);
-
-export interface ClassifyJobData {
-  storeId: string;
-  origin: 'post-ingest' | 'manual' | 'cron';
-}
-
-export const classifyQueue = new Queue<ClassifyJobData, unknown, 'classify:store'>(
-  QUEUES.CLASSIFY,
-  { connection, defaultJobOptions },
-);
-
-export interface DigestJobPayload {
-  storeId: string;
-  timezone: string;
-}
-
-export const digestQueue = new Queue<DigestJobPayload, unknown, 'digest:weekly'>(
-  QUEUES.DIGEST,
-  { connection, defaultJobOptions },
-);
-
-// QueueEvents was exported here previously but never consumed anywhere; it
-// was eagerly subscribing to Redis pub/sub at module load, breaking Next.js
-// build-time route analysis. Removed. Re-add via a factory function if any
-// future caller actually needs it.
+export const dlq = new Queue<DlqPayload, unknown, string>(QUEUES.DLQ, {
+  connection,
+  defaultJobOptions: { removeOnComplete: false, removeOnFail: false },
+});

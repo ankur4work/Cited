@@ -24,8 +24,8 @@ async function main() {
 
   console.log('\nPostgres');
   try {
-    const [{ version }] = await prisma.$queryRaw<{ version: string }[]>`SELECT version()`;
-    ok(version.split(',')[0]!);
+    const rows = await prisma.$queryRaw<{ version: string }[]>`SELECT version()`;
+    ok(rows[0]?.version.split(',')[0] ?? 'connected');
   } catch (e) {
     bad(`connection: ${(e as Error).message}`);
   }

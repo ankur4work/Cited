@@ -98,6 +98,10 @@ export async function upsertStoreWithToken(input: StoreUpsertInput): Promise<Sto
 export async function getStoreToken(shopDomain: string): Promise<string | null> {
   const store = await prisma.store.findUnique({ where: { shopDomain } });
   if (!store || store.uninstalledAt) return null;
+  // accessToken is nullable: a Store row can exist before the token exchange
+  // completes (and after a redact purge), so absence is a normal state, not
+  // a corrupt row. Callers treat null as "re-authenticate".
+  if (!store.accessToken) return null;
   return decrypt(store.accessToken);
 }
 

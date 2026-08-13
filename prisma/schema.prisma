@@ -146,18 +146,26 @@ model Store {
 
   /// AES-256-GCM ciphertext (lib/crypto.ts). Never logged, never returned.
   accessToken String?
-  scopes      String?
+  /// Shopify issues EXPIRING offline tokens to apps created after Apr 2026.
+  /// Null means non-expiring (legacy). Refreshed via token exchange.
+  accessTokenExpiresAt DateTime?
+  scope                String?
 
   /// True once Shopify grants `write_product_reviews`. Until then the
   /// metaobject projection is SKIPPED and we render from our own data.
   /// See PLAN.md §5.2.1.
   reviewScopeGranted Boolean @default(false)
 
-  plan               Plan      @default(FREE)
-  subscriptionGid    String?
-  planUpdatedAt      DateTime?
-  installedAt        DateTime  @default(now())
-  uninstalledAt      DateTime?
+  plan            Plan      @default(FREE)
+  shopifyChargeId String?
+  graceEndsAt     DateTime?
+  planUpdatedAt   DateTime?
+  installedAt     DateTime  @default(now())
+  uninstalledAt   DateTime?
+  /// Set when app/uninstalled fires; cleared on reinstall so an in-flight
+  /// 48h redact is cancelled automatically. Shopify explicitly supports the
+  /// uninstall → reinstall-within-48h merchant flow.
+  scheduledRedactAt DateTime?
 
   onboardingStep     String   @default("connect")
   onboardingComplete Boolean  @default(false)
@@ -188,10 +196,31 @@ model Store {
   suppressions Suppression[]
   webhookEvents WebhookEvent[]
   media        ReviewMedia[]
+  billingEvents BillingEvent[]
 
   @@index([plan])
   @@index([uninstalledAt])
+  @@index([scheduledRedactAt])
   @@map("stores")
+}
+
+/// Append-only billing audit trail. Exists because plan transitions are the
+/// single most disputed thing a merchant can contact support about, and
+/// because App Store requirement 1.2.2 means reinstalls silently reset paid
+/// plans to FREE — that reset must be explainable after the fact.
+model BillingEvent {
+  id              String  @id @default(cuid())
+  storeId         String
+  eventType       String
+  amountCents     Int     @default(0)
+  shopifyChargeId String?
+
+  createdAt DateTime @default(now())
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, createdAt(sort: Desc)])
+  @@map("billing_events")
 }
 
 // ─────────────────────────────────────────────────────────────

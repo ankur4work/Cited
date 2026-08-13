@@ -119,7 +119,18 @@ export class ShopifyClient {
 
   constructor(store: Pick<Store, 'shopDomain' | 'accessToken'>, opts: ShopifyClientOptions = {}) {
     this.shopDomain = store.shopDomain;
-    this.accessToken = opts.accessTokenOverride ?? decrypt(store.accessToken);
+
+    const token = opts.accessTokenOverride ?? (store.accessToken ? decrypt(store.accessToken) : null);
+    if (!token) {
+      // accessToken is nullable: a Store row exists before the token exchange
+      // completes and after a redact purge. Failing loudly here beats sending
+      // an unauthenticated request and debugging a 401 from the Admin API.
+      // Reuses ShopifyAuthError so existing callers, which already re-queue
+      // and wait for the next embedded-app open to trigger token exchange,
+      // handle a missing token exactly as they handle a stale one.
+      throw new ShopifyAuthError(store.shopDomain, 'no-access-token');
+    }
+    this.accessToken = token;
     this.fetchImpl = opts.fetchImpl ?? fetch;
   }
 
