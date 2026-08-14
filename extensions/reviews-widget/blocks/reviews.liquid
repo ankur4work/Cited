@@ -61,7 +61,7 @@
 -%}
 
 {%- comment -%}
-  Styles live in assets/, not in a {% stylesheet %} tag: that tag is a theme
+  Styles live in assets/, not in a "stylesheet" tag: that tag is a theme
   *section* feature and the extension bundler rejects it in an app block
   ("Cannot use stylesheet tag in app blocks"). Emitting the link here also
   means the stylesheet is requested before the markup below it parses, so the
