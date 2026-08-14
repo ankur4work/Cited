@@ -133,12 +133,39 @@
 
           <div class="cited-review__meta">
             <span class="cited-review__author">{{ r_author | escape }}</span>
+            {%- comment -%}
+              This is OUR order-match badge. It is deliberately NOT, and must
+              never resemble, the "Verified by Shop" badge.
+
+              Shopify's rule for approved review apps: use only the official
+              badge assets it provides, and "do not modify, recreate, or alter
+              the badge in any way." The two marks also mean different things —
+              "Verified by Shop" is Shopify attesting via the Shop app, while
+              this says only that Cited matched the reviewer's email to a real
+              order for this product on this store.
+
+              So it is kept distinct on every axis a reviewer would check:
+                * mark    — a bag outline, not a checkmark. A check inside a
+                            circle is the shape people read as Shopify's.
+                * colour  — green, distinct from all three official variants
+                            (purple, black, grey).
+                * wording — names the store, not Shop.
+              If we later display the real "Verified by Shop" badge, it is an
+              ADDITIONAL element using Shopify's own asset, never this one
+              restyled.
+            {%- endcomment -%}
             {%- if r_verified -%}
-              <span class="cited-review__verified" title="Verified buyer">
+              <span class="cited-review__verified" title="Cited matched this reviewer to an order on this store">
                 <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
-                  <path fill="currentColor" d="M6.2 11.3 3.5 8.6l1.1-1.1 1.6 1.6 4.2-4.2 1.1 1.1z"/>
+                  <path
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linejoin="round"
+                    d="M3.4 5.6h9.2l-.8 7.3a1 1 0 0 1-1 .9H5.2a1 1 0 0 1-1-.9zM6 5.6V4.3a2 2 0 0 1 4 0v1.3"
+                  />
                 </svg>
-                Verified buyer
+                Verified purchase
               </span>
             {%- endif -%}
             {%- if review.submitted_at != blank -%}
@@ -326,6 +353,13 @@
   color: var(--cited-muted);
 }
 
+/*
+ * Deliberately NOT driven by a theme setting or custom property. Every other
+ * colour here is merchant-configurable; this one is hard-coded so a merchant
+ * cannot recolour our order-match badge into Shop purple (#5A31F4) and
+ * accidentally produce something that reads as the official "Verified by
+ * Shop" badge. See the comment at the badge markup.
+ */
 .cited-review__verified {
   display: inline-flex;
   align-items: center;

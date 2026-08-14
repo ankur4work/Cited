@@ -28,12 +28,13 @@ export const APP_HOST = 'cited.solnix.store';
 /**
  * Matches `access_scopes.scopes` in shopify.app.toml. Order-insensitive.
  *
- * `write_product_reviews` is absent on purpose: it is restricted to
- * Shopify-approved review apps, so before approval the granted scope set
- * legitimately differs from the eventual one. Add it here at the same time
- * it is added to shopify.app.toml, or this check will fail every deploy.
+ * Includes the restricted `write_product_reviews` scope, granted 2026-08-14
+ * (test access, dev store only — final approval still pending). This must
+ * stay in step with shopify.app.toml and SHOPIFY_SCOPES in the environment
+ * or the health check below fails every production deploy.
  */
-export const APP_SCOPES = 'read_products,read_orders,read_customers,read_metaobjects';
+export const APP_SCOPES =
+  'read_products,read_orders,read_customers,read_metaobjects,write_product_reviews';
 
 /** Normalize a comma-separated scope string for order-insensitive comparison. */
 function normalizeScopes(raw: string): string {

@@ -52,12 +52,40 @@ export const ingestionQueue = new Queue<IngestionJobData, unknown, IngestionJobN
 export type SyndicationJobName =
   | 'syndicate:review'
   | 'syndicate:aggregate'
-  | 'syndicate:backfill';
+  | 'syndicate:backfill'
+  | 'reconcile:metaobject';
 
 export interface SyndicationJobData {
   storeId: string;
   reviewId?: string;
   productId?: string;
+
+  // ── reconcile:metaobject only ──────────────────────────────
+  /** Metaobject the webhook fired for, always in `gid://` form. */
+  metaobjectGid?: string;
+  /** Handle from the payload. Recovers ownership when the GID isn't on file yet. */
+  metaobjectHandle?: string;
+  /** Full topic, e.g. `metaobjects/update` — delete is handled differently. */
+  webhookTopic?: string;
+  /** WebhookEvent row to close out once reconciliation finishes. */
+  webhookEventId?: string;
+
+  // ── syndicate:backfill only ────────────────────────────────
+  /**
+   * Resume point: the last review ID projected. Each chunk re-enqueues itself
+   * with a new cursor rather than looping in one job, so a worker restart
+   * costs one chunk instead of the whole store.
+   */
+  cursor?: string;
+  /** Running total across chunks, for progress logging. */
+  processed?: number;
+  /**
+   * Field values lifted from the webhook body, when it carried them. Present
+   * means the processor can detect drift without an Admin API read — which
+   * matters because our own writes generate webhooks, so this is the hot path,
+   * not the exception.
+   */
+  metaobjectFields?: Record<string, string>;
 }
 
 export const syndicationQueue = new Queue<SyndicationJobData, unknown, SyndicationJobName>(

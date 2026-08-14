@@ -7,15 +7,15 @@ application_url = "https://localhost:3000"
 embedded = true
 
 [access_scopes]
-# Base scopes, granted at install.
+# `write_product_reviews` is a RESTRICTED scope for the standard
+# `product_review` metaobject. Test access was GRANTED on 2026-08-14 and
+# is currently active on the DEV TEST STORE ONLY — final approval still
+# requires submitting the working implementation for review.
 #
-# `write_product_reviews` is deliberately NOT here. The standard
-# `product_review` metaobject is a RESTRICTED definition, granted only
-# after Shopify approves the app as a product review app via
-# Partner Dashboard → Partners Internal → API Access. Requesting it
-# before approval fails the install. Append it once granted.
-# See PLAN.md §5.2.1.
-scopes = "read_products,read_orders,read_customers,read_metaobjects"
+# Keep this in step with APP_SCOPES in lib/shopify/app-identity.ts and
+# SHOPIFY_SCOPES in the environment. The health check compares all three,
+# so a mismatch fails every production deploy. See ACCESS-REQUEST.md §6.
+scopes = "read_products,read_orders,read_customers,read_metaobjects,write_product_reviews"
 use_legacy_install_flow = false
 
 [auth]
@@ -44,6 +44,25 @@ api_version = "2025-07"
   [[webhooks.subscriptions]]
   topics = [ "products/create", "products/update", "products/delete" ]
   uri = "/api/webhooks/products"
+
+  # Metaobject change feed — MANDATORY for approved review apps.
+  #
+  # Reviews can be created, edited or deleted outside this app: by the
+  # merchant in admin, by another approved review app, or by Shopify. Without
+  # these we would serve stale review data while believing we are
+  # authoritative.
+  #
+  # Scoped to our type so we are not woken for every metaobject in the shop.
+  #
+  # `filter`, NOT `sub_topic`: sub-topics were deprecated in Admin API 2024-07
+  # and the metaobjects/* topics now REQUIRE a filter. We are on 2025-07, so
+  # sub_topic would be rejected. `product_review` is a Shopify STANDARD
+  # definition, so the plain type is correct here — an app-owned definition
+  # would need the full `app--{id}--{namespace}` form instead.
+  [[webhooks.subscriptions]]
+  topics = [ "metaobjects/create", "metaobjects/update", "metaobjects/delete" ]
+  filter = "type:product_review"
+  uri = "/api/webhooks/metaobjects"
 
   [[webhooks.subscriptions]]
   compliance_topics = [

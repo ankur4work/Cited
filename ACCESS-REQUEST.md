@@ -1,6 +1,6 @@
 # `product_review` API Access Request — submission guide
 
-**Status:** not yet filed
+**Status:** **test access GRANTED 2026-08-14** — dev store only. This is step 2 of 4; final approval still requires submitting the working implementation for review (§1).
 **Owner:** Ankur
 **Why it matters:** this is the longest-lead-time item in the project and it gates the core architecture, Shop-app review surfacing, and the AEO wedge. See `PLAN.md` §5.2.1.
 
@@ -38,47 +38,66 @@ Shopify lists these as **must** requirements. This is what the reviewer is check
 |---|---|---|---|
 | R1 | Syndicate **all valid reviews** to metaobject entries, with proper validation | ✅ Built | `jobs/processors/syndicate-review.ts`, `lib/shopify/metaobjects.ts` |
 | R2 | Maintain aggregates — update `reviews.rating` and `reviews.rating_count` on each product | ✅ Built | `jobs/processors/syndicate-aggregate.ts`, `setProductRatingMetafields()` |
-| R3 | Subscribe to **all metaobject webhooks** (CREATE, UPDATE, DELETE) using the `subTopic` field | ❌ **MISSING** | see §3 |
-| R4 | Display the **"Verified by Shop" badge** using **only official Shopify assets** on syndicated reviews | ❌ **CONFLICT** | see §3 |
+| R3 | Subscribe to **all metaobject webhooks** (CREATE, UPDATE, DELETE), scoped to the review type | ✅ Built | `shopify.app.toml` subscription, `app/api/webhooks/metaobjects/route.ts`, `jobs/processors/reconcile-metaobject.ts` |
+| R4 | Display the **"Verified by Shop" badge** using **only official Shopify assets** on syndicated reviews | ✅ Resolved | `extensions/reviews-widget/blocks/reviews.liquid` — we display no Shop badge at all; ours is now unmistakably distinct, see §3 |
 | R5 | Handle webhooks **asynchronously** to avoid API throttling | ✅ Built | webhooks enqueue to BullMQ; nothing processes inline |
 | R6 | Implement **retry / backoff** for failed operations | ✅ Built | `syndicationQueue` — 6 attempts, exponential backoff; terminal errors short-circuit instead of burning retries |
 
-**4 of 6 are done. Two must be fixed before step 4.**
+**All 6 are done in code.** What remains before step 4 is verification against a real dev store, not construction — see §4.
 
 ---
 
-## 3. The two gaps that would fail review
+## 3. The remaining gap, and one unconfirmed detail
 
-### R3 — Metaobject webhooks are not subscribed
+### R3 — Metaobject webhooks — BUILT, one detail unconfirmed
 
 Shopify requires subscriptions to metaobject **CREATE, UPDATE and DELETE**, scoped with the `subTopic` field (the metaobject type, i.e. `product_review`).
 
 Why it's required, and why it genuinely matters: reviews can be modified **outside our app** — by the merchant in the Shopify admin, by another approved review app, or by Shopify itself. Without these webhooks our database silently drifts out of sync with what shoppers actually see, and we'd be serving stale review data while believing we're authoritative.
 
-**Not yet in `shopify.app.toml`.** Needs a subscription block plus a handler that reconciles inbound metaobject changes against our `Review` rows — including the awkward case of an entry we did not create.
+Built as of 2026-08-14:
 
-### R4 — Our verified badge conflicts with the "Verified by Shop" rule
+- **Subscription** in `shopify.app.toml` for all three topics.
+- **`app/api/webhooks/metaobjects/route.ts`** — HMAC verification, replay rejection via the `WebhookEvent` unique index, then enqueue and return. No Shopify or database work happens inline, so the 5s webhook timeout is never at risk.
+- **`jobs/processors/reconcile-metaobject.ts`** — compares Shopify's stored metaobject against the exact field set we would write and re-syndicates from Postgres on any difference. Handles the entry we did not create by ignoring it: a foreign metaobject is left alone rather than imported, because our aggregates are computed from our own reviews and pushed to the shop-wide rating metafields, so ingesting one would double-count it.
 
-`extensions/reviews-widget/blocks/reviews.liquid` currently renders a **custom SVG checkmark with the label "Verified buyer"**. Shopify's rules say the "Verified by Shop" badge must use **only official Shopify assets**, and separately that apps "cannot modify or recreate the official Verified by Shop badge."
+**Resolved — it is `filter`, not `sub_topic`.** Sub-topics were **deprecated in Admin API 2024-07**, and the `metaobjects/*` topics now *require* a filter. We are on `2025-07`, so `sub_topic` would have been rejected. The config now reads:
 
-A hand-drawn checkmark next to the word "Verified" on a syndicated review is exactly the kind of thing a reviewer flags. Resolution options, in order of preference:
+```toml
+filter = "type:product_review"
+```
 
-1. Use the official Shopify-provided badge asset on syndicated reviews (correct, needs the asset — likely supplied with test access at step 2).
-2. Keep our own badge but make it visually and textually distinct from Shopify's — different wording and mark, so it clearly denotes *our* order-matched verification, not Shop's.
-3. Drop the badge from syndicated reviews entirely.
+`product_review` is a Shopify **standard** definition, so the plain type is correct; an app-owned definition would need the full `app--{id}--{namespace}` form. The route does not depend on this anyway — it re-checks the metaobject type itself and ignores anything that isn't `product_review`, so a dropped filter degrades to wasted work rather than wrong behaviour.
 
-**Recommendation: decide this at step 3, once test access reveals what the official asset actually is.** Do not guess now and rebuild later.
+### R4 — Our verified badge vs the "Verified by Shop" rule — RESOLVED
+
+Shopify's rules confirmed: apps must "use only the official badge assets provided by Shopify" and "do not modify, recreate, or alter the badge in any way." Three official variants exist (purple, black, grey), and the badge may only be shown "for reviews that are successfully syndicated to or from the standard product review metaobject."
+
+The block previously rendered a **custom SVG checkmark labelled "Verified buyer"** — a hand-drawn check next to the word "Verified" is exactly what a reviewer flags.
+
+**Taken: option 2.** The deciding point is that the two badges do not mean the same thing. "Verified by Shop" is *Shopify* attesting through the Shop app. Ours attests only that Cited matched the reviewer's email to a real order for that product on that store. Showing a Shop-like mark for our own claim would misrepresent both. So we display **no Shop badge at all**, and ours is now distinct on every axis a reviewer checks:
+
+| | Before | Now |
+|---|---|---|
+| Mark | checkmark | bag outline — a check-in-circle is the shape read as Shopify's |
+| Wording | "Verified buyer" | "Verified purchase", with a title naming Cited as the verifier |
+| Colour | green `#0a7c42` | unchanged, but now **hard-coded** — every other colour in the block is merchant-configurable, so a merchant could otherwise recolour it to Shop purple `#5A31F4` |
+
+If we later display the real badge it will be an **additional** element using Shopify's own asset, never this one restyled.
 
 ---
 
 ## 4. Pre-submission checklist
 
-File step 1 immediately. Complete these before step 4.
+Everything below the line is now verification against a real dev store, not construction.
 
-- [ ] **Step 1 filed** — Partners Internal → API Access → request standard product reviews scope
-- [ ] Dev store created and app installed on it
-- [ ] R3: metaobject CREATE/UPDATE/DELETE webhooks subscribed with `subTopic`, handler reconciles inbound changes
-- [ ] R4: verified badge resolved against the official-asset rule
+- [x] **Step 1 filed** — Partners Internal → API Access → request standard product reviews scope
+- [x] **Step 2 granted** — test access on the dev store, 2026-08-14
+- [x] R3: metaobject CREATE/UPDATE/DELETE webhooks subscribed with `filter`, handler reconciles inbound changes
+- [x] R4: verified badge resolved against the official-asset rule
+- [ ] `SHOPIFY_SCOPES` updated in the Coolify environment — **not done, and it will roll back the deploy** if missed (§6.3)
+- [ ] Dev store created, `dev_store_url` set in `shopify.app.toml`, app installed on it
+- [ ] `shopify app deploy` run once — confirms the `filter` key and registers the subscriptions
 - [ ] Reviews demonstrably syndicating: create a review → metaobject appears in the dev store
 - [ ] `reviews.rating` and `reviews.rating_count` populated and correct on the product (API-only — not visible in admin, verify via GraphQL)
 - [ ] Ratings visibly rendering **in the Shop app** on the dev shop
@@ -123,15 +142,15 @@ Adapt; keep it factual. Reviewers are checking implementation, not marketing.
 
 Approval changes the granted scope set, and three places encode it. All three must change together or the app breaks.
 
-1. **`shopify.app.toml`** — append `write_product_reviews` to `access_scopes.scopes`.
-2. **`lib/shopify/app-identity.ts`** — append it to `APP_SCOPES`. This constant is compared against the live env in the health check, so a mismatch **fails every production health check** and rolls back the deploy in Coolify.
-3. **`.env` / Coolify env** — append it to `SHOPIFY_SCOPES` (it currently sits separately in `SHOPIFY_SCOPES_RESTRICTED`).
+1. ✅ **`shopify.app.toml`** — append `write_product_reviews` to `access_scopes.scopes`. *(done 2026-08-14)*
+2. ✅ **`lib/shopify/app-identity.ts`** — append it to `APP_SCOPES`. This constant is compared against the live env in the health check, so a mismatch **fails every production health check** and rolls back the deploy in Coolify. *(done 2026-08-14)*
+3. ⚠️ **`.env` / Coolify env** — append it to `SHOPIFY_SCOPES` (it currently sits separately in `SHOPIFY_SCOPES_RESTRICTED`). `.env.example` is updated; **the live Coolify env var is not**, and the health check compares all three — so deploying before setting it there will roll the release back.
 
 Then, per store:
 
-4. **Flip `Store.reviewScopeGranted` to `true`.** Until this is set, `syndicate-review` deliberately marks every review `SKIPPED` and returns without calling Shopify. Nothing syndicates until it flips.
+4. ✅ **`Store.reviewScopeGranted`** — no longer a manual step. `lib/shopify/store.ts` derives it from the scope string the token exchange actually returns, on install and on every app open, so a shop starts syndicating the moment Shopify grants the scope to it and stops if it is ever revoked. Until it is true, `syndicate-review` deliberately marks every review `SKIPPED` and returns without calling Shopify. *(done 2026-08-14)*
 5. **Existing merchants must re-authorise** — a scope change requires re-granting. Plan the prompt.
-6. **Run a store-wide backfill** to project reviews accumulated while access was pending. `syndicate:backfill` is currently a logged no-op; it needs the resumable, rate-limited implementation before it is run against a large catalog.
+6. ✅ **Store-wide backfill** — implemented in `jobs/processors/syndicate-backfill.ts`: 50 reviews per chunk, each chunk re-enqueuing the next with a cursor, so a crash or deploy costs one chunk rather than the store. It is **triggered automatically** by the same scope-flip in step 4, so no manual run is needed. *(done 2026-08-14)*
 
 ---
 

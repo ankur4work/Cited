@@ -11,6 +11,8 @@ import { ingestProductsProcessor } from './processors/ingest-products';
 import { ingestOrdersProcessor } from './processors/ingest-orders';
 import { syndicateReviewProcessor } from './processors/syndicate-review';
 import { syndicateAggregateProcessor } from './processors/syndicate-aggregate';
+import { reconcileMetaobjectProcessor } from './processors/reconcile-metaobject';
+import { syndicateBackfillProcessor } from './processors/syndicate-backfill';
 import { moveToDlq } from './dlq';
 import { logger } from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
@@ -95,15 +97,14 @@ type SyndicationHandler = (
 const syndicationHandlers: Record<SyndicationJobName, SyndicationHandler> = {
   'syndicate:review': syndicateReviewProcessor,
   'syndicate:aggregate': syndicateAggregateProcessor,
+  // Inbound half of the same projection: detects metaobjects changed outside
+  // the app and repairs them from Postgres. Shares this queue on purpose —
+  // reconciliation and syndication write the same records, and keeping them
+  // on one queue means one concurrency budget rather than two that can race.
+  'reconcile:metaobject': reconcileMetaobjectProcessor,
   // Bulk re-projection of an entire store, used after Shopify grants the
-  // restricted scope. Not implemented yet: it must resume and rate-limit,
-  // and a naive version would hammer the Admin API on large catalogs.
-  'syndicate:backfill': async (job) => {
-    logger.warn(
-      { storeId: job.data.storeId },
-      'syndicate:backfill not implemented — no-op until the resumable version lands',
-    );
-  },
+  // restricted scope. Chunked and cursor-resumable — see the processor.
+  'syndicate:backfill': syndicateBackfillProcessor,
 };
 
 const syndicationWorker = new Worker<SyndicationJobData, unknown, SyndicationJobName>(

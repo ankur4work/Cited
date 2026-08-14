@@ -1,5 +1,7 @@
 import { prisma } from '../prisma';
+import { logger } from '../logger';
 import { decrypt, encrypt } from '../crypto';
+import { enqueueSyndicationBackfill } from '@/jobs/enqueue';
 import type { Plan, Store } from '@prisma/client';
 
 export interface StoreUpsertInput {
@@ -8,6 +10,80 @@ export interface StoreUpsertInput {
   scope: string;
   /** Seconds until the access token expires (null = non-expiring). */
   expiresIn?: number | null;
+}
+
+/**
+ * Whether Shopify actually granted the restricted review scope.
+ *
+ * Derived from the scope string the token exchange returns, never from what
+ * we asked for: the two differ for the entire period between requesting
+ * access and being approved, and they differ per shop, since test access is
+ * granted on a dev store while production shops still install without it.
+ *
+ * This is the flag every syndication path checks before touching a
+ * `product_review` metaobject, so getting it from the authoritative source
+ * means a store starts and stops syndicating on its own, with no manual step.
+ */
+function grantsReviewScope(scope: string): boolean {
+  return scope
+    .split(',')
+    .map((s) => s.trim())
+    .includes(REVIEW_SCOPE);
+}
+
+const REVIEW_SCOPE = 'write_product_reviews';
+
+/**
+ * Sync `reviewScopeGranted` to reality and start the backfill the first time
+ * it turns on.
+ *
+ * Written as a single conditional UPDATE rather than read-then-write. Two app
+ * opens can land on two instances concurrently, and a read-then-write would
+ * let both observe `false` and both start a backfill. `updateMany` with the
+ * old value in the WHERE clause makes exactly one of them report a changed
+ * row, so the backfill is triggered once per genuine transition — no extra
+ * query on the ordinary open where nothing changed, and no schema flag to
+ * keep in step.
+ *
+ * A failure to enqueue is logged, never thrown: this runs inside the OAuth
+ * callback and on every embedded app open, and a Redis blip must not break a
+ * merchant's login. The backfill is re-triggerable by hand.
+ */
+async function syncReviewScopeFlag(input: {
+  storeId: string;
+  shopDomain: string;
+  scope: string;
+}): Promise<void> {
+  const granted = grantsReviewScope(input.scope);
+
+  const changed = await prisma.store.updateMany({
+    where: { id: input.storeId, reviewScopeGranted: !granted },
+    data: { reviewScopeGranted: granted },
+  });
+
+  if (changed.count === 0) return;
+
+  if (!granted) {
+    logger.warn(
+      { storeId: input.storeId, shop: input.shopDomain },
+      'write_product_reviews revoked — metaobject syndication now skipped for this store',
+    );
+    return;
+  }
+
+  logger.info(
+    { storeId: input.storeId, shop: input.shopDomain },
+    'write_product_reviews granted — starting metaobject backfill',
+  );
+
+  try {
+    await enqueueSyndicationBackfill({ storeId: input.storeId });
+  } catch (err) {
+    logger.error(
+      { storeId: input.storeId, err: (err as Error).message },
+      'Could not start backfill after scope grant — run it manually',
+    );
+  }
 }
 
 function expiresAt(expiresIn: number | null | undefined): Date | null {
@@ -92,6 +168,11 @@ export async function upsertStoreWithToken(input: StoreUpsertInput): Promise<Sto
     },
   });
   if (prior) await logReinstallBillingReset(prior);
+  await syncReviewScopeFlag({
+    storeId: store.id,
+    shopDomain: store.shopDomain,
+    scope: input.scope,
+  });
   return store;
 }
 
@@ -122,6 +203,11 @@ export async function refreshStoreToken(input: StoreUpsertInput): Promise<Store>
     },
   });
   if (prior) await logReinstallBillingReset(prior);
+  await syncReviewScopeFlag({
+    storeId: store.id,
+    shopDomain: store.shopDomain,
+    scope: input.scope,
+  });
   return store;
 }
 

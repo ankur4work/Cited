@@ -1,5 +1,6 @@
 import type { ShopifyClient } from './client';
 import { logger } from '../logger';
+import { PRODUCT_REVIEW_TYPE } from './metaobject-payload';
 
 /**
  * Projection into Shopify's standard `product_review` metaobject.
@@ -20,7 +21,9 @@ import { logger } from '../logger';
  * SKIPPED rather than burning retries against a permission error.
  */
 
-export const PRODUCT_REVIEW_TYPE = 'product_review';
+// Re-exported so callers keep importing the type name from here, while the
+// definition lives in the dependency-free module the webhook path can use.
+export { PRODUCT_REVIEW_TYPE };
 export const REVIEWS_NAMESPACE = 'reviews';
 
 const METAOBJECT_UPSERT = /* GraphQL */ `
@@ -106,6 +109,20 @@ function ratingValue(rating: number, scaleMin: number, scaleMax: number): string
     scale_max: scaleMax.toFixed(1),
     value: rating.toFixed(1),
   });
+}
+
+/**
+ * The exact field set we would write for a review.
+ *
+ * Exported because drift detection has to compare Shopify's stored values
+ * against *this* serialization, not a re-derivation of it. Comparing against
+ * a second implementation would report drift on every formatting difference —
+ * `5` vs `5.0`, a trailing `Z` — and rewrite the metaobject forever.
+ */
+export function buildReviewFields(
+  input: ReviewMetaobjectInput,
+): Array<{ key: string; value: string }> {
+  return buildFields(input);
 }
 
 function buildFields(input: ReviewMetaobjectInput): Array<{ key: string; value: string }> {
@@ -205,6 +222,79 @@ export async function upsertReviewMetaobject(
   }
 
   return { metaobjectGid: gid };
+}
+
+const METAOBJECT_BY_ID = /* GraphQL */ `
+  query CitedMetaobject($id: ID!) {
+    metaobject(id: $id) {
+      id
+      handle
+      type
+      updatedAt
+      fields { key value }
+      capabilities { publishable { status } }
+    }
+  }
+`;
+
+export interface StoredMetaobject {
+  gid: string;
+  handle: string;
+  type: string;
+  updatedAt: string | null;
+  fields: Record<string, string>;
+  /** 'ACTIVE' | 'DRAFT', or null when the definition has no publishable capability. */
+  publishableStatus: string | null;
+}
+
+/**
+ * Read a metaobject back from Shopify.
+ *
+ * Only used by the reconcile path, and only when the webhook payload didn't
+ * carry field values — a metaobject webhook that already contains its fields
+ * lets us detect drift without spending an Admin API call per delivery, which
+ * matters because our own writes generate webhooks too.
+ *
+ * Returns null when the metaobject no longer exists. That is an ordinary
+ * outcome, not an error: a create and a delete can arrive out of order, and
+ * Shopify retries deliveries for days.
+ */
+export async function fetchReviewMetaobject(
+  client: ShopifyClient,
+  gid: string,
+): Promise<StoredMetaobject | null> {
+  const resp = await client.graphql<{
+    metaobject: {
+      id: string;
+      handle: string;
+      type: string;
+      updatedAt: string | null;
+      fields: Array<{ key: string; value: string | null }>;
+      capabilities: { publishable: { status: string } | null } | null;
+    } | null;
+  }>(METAOBJECT_BY_ID, { id: gid });
+
+  if (resp.errors?.length) {
+    const message = resp.errors.map((e) => e.message).join('; ');
+    throw new MetaobjectError(`metaobject query: ${message}`, undefined, isTerminalCode(undefined, message));
+  }
+
+  const node = resp.data?.metaobject;
+  if (!node) return null;
+
+  const fields: Record<string, string> = {};
+  for (const field of node.fields) {
+    fields[field.key] = field.value ?? '';
+  }
+
+  return {
+    gid: node.id,
+    handle: node.handle,
+    type: node.type,
+    updatedAt: node.updatedAt,
+    fields,
+    publishableStatus: node.capabilities?.publishable?.status ?? null,
+  };
 }
 
 /** Remove a review's metaobject — used when a review is deleted or redacted. */

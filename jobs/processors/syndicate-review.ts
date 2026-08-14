@@ -6,8 +6,8 @@ import {
   upsertReviewMetaobject,
   deleteReviewMetaobject,
   MetaobjectError,
-  type AppVerificationStatus,
 } from '@/lib/shopify/metaobjects';
+import { reviewMetaobjectInput, shouldHaveMetaobject } from '@/lib/reviews/projection';
 import type { SyndicationJobData, SyndicationJobName } from '../queue';
 
 /**
@@ -19,12 +19,6 @@ import type { SyndicationJobData, SyndicationJobName } from '../queue';
  * though it exists in our database — which makes syncStatus a user-visible
  * state, not an internal detail.
  */
-
-const VERIFICATION_MAP: Record<string, AppVerificationStatus> = {
-  VERIFIED_BUYER: 'verified_buyer',
-  VERIFIED_REVIEWER: 'verified_reviewer',
-  UNVERIFIED: 'unverified',
-};
 
 export async function syndicateReviewProcessor(
   job: Job<SyndicationJobData, unknown, SyndicationJobName>,
@@ -81,10 +75,9 @@ export async function syndicateReviewProcessor(
 
   try {
     // A review that is no longer publishable should not linger on the
-    // storefront. Deleting is correct for DELETED/SPAM; PENDING and HIDDEN
-    // keep their metaobject as a DRAFT so moderation can flip visibility
-    // without a create/delete cycle (and without losing the handle).
-    if (review.status === 'DELETED' || review.status === 'SPAM') {
+    // storefront. See shouldHaveMetaobject for why PENDING and HIDDEN keep
+    // a DRAFT metaobject instead of being deleted.
+    if (!shouldHaveMetaobject(review.status)) {
       if (review.metaobjectGid) {
         await deleteReviewMetaobject(client, review.metaobjectGid);
       }
@@ -96,27 +89,10 @@ export async function syndicateReviewProcessor(
       return;
     }
 
-    const mediaUrls = review.media
-      .map((m) => mediaPublicUrl(m.r2Key))
-      .filter((u): u is string => u !== null);
-
-    const { metaobjectGid } = await upsertReviewMetaobject(client, {
-      handle: metaobjectHandle(review.id),
-      productGid: review.product.shopifyGid,
-      rating: review.rating,
-      submittedAt: review.submittedAt,
-      verification: VERIFICATION_MAP[review.verification] ?? 'unverified',
-      source: review.sourceLabel,
-      title: review.title,
-      body: review.body,
-      author: review.authorName,
-      orderGid: review.orderShopifyGid,
-      variantGid: review.variantShopifyGid,
-      merchantReply: review.merchantReply,
-      language: review.language,
-      mediaUrls,
-      publishedAt: review.status === 'PUBLISHED' ? review.publishedAt : null,
-    });
+    const { metaobjectGid } = await upsertReviewMetaobject(
+      client,
+      reviewMetaobjectInput(review),
+    );
 
     await prisma.review.update({
       where: { id: review.id },
@@ -153,24 +129,3 @@ export async function syndicateReviewProcessor(
   }
 }
 
-/**
- * Metaobject handles are constrained to lowercase alphanumerics and dashes.
- * cuid() satisfies that already, but normalising here means an imported
- * review carrying a foreign ID format can never produce an invalid handle.
- */
-function metaobjectHandle(reviewId: string): string {
-  return `cited-${reviewId.toLowerCase().replace(/[^a-z0-9-]/g, '-')}`;
-}
-
-/**
- * Public URL for a stored media object.
- *
- * Returns null when R2 has no public base configured, so a half-provisioned
- * environment syndicates the review text without media rather than emitting
- * broken image URLs onto the merchant's storefront.
- */
-function mediaPublicUrl(r2Key: string): string | null {
-  const base = process.env.R2_PUBLIC_BASE_URL;
-  if (!base) return null;
-  return `${base.replace(/\/$/, '')}/${r2Key}`;
-}
