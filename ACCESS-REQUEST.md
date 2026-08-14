@@ -98,6 +98,7 @@ Everything below the line is now verification against a real dev store, not cons
 - [x] `SHOPIFY_SCOPES` set in the Coolify environment, including `write_product_reviews` (§6.3)
 - [x] Deployed — `cited-web` and `cited-worker` live at `https://cited.solnix.store`, migrations applied, worker consuming
 - [ ] Dev store created, `dev_store_url` set in `shopify.app.toml`, app installed on it
+- [ ] 🔴 **Protected customer data access approved** — blocks `shopify app deploy`, see §4.1
 - [ ] `shopify app deploy` run once — confirms the `filter` key and registers the subscriptions
 - [x] App URL + redirect URLs set to `https://cited.solnix.store` in `shopify.app.toml` — reaches the Partner Dashboard on the next `shopify app deploy`
 - [ ] Reviews demonstrably syndicating: create a review → metaobject appears in the dev store
@@ -108,6 +109,35 @@ Everything below the line is now verification against a real dev store, not cons
 - [ ] Aggregates correct after edit/delete, not just on create
 - [ ] Retry/backoff demonstrable (kill the API mid-sync, confirm recovery)
 - [ ] Bulk limits respected: 20MB JSONL, batch 10,000 reviews, 250 IDs per bulk delete
+
+### 4.1 Blocker — protected customer data access (found 2026-08-14)
+
+`shopify app deploy` reached the Partner Dashboard, built the extension and
+then **refused to create the app version**:
+
+> This app is not approved to subscribe to webhook topics containing protected
+> customer data.
+
+The error is raised **twice — once per offending topic**. The offenders are
+`orders/fulfilled` and `orders/paid`; every other subscribed topic is either
+app lifecycle (`app/uninstalled`, `app_subscriptions/update`), catalogue
+(`products/*`), our own metaobjects, or a mandatory compliance topic, none of
+which carry customer data.
+
+This is a **second, separate approval from the `product_review` scope** and it
+is not a CLI operation — it is a form at **Partner Dashboard → the Cited app →
+API access → Protected customer data access**, where you declare which data
+you use and why, plus the Level 2 fields (name, email, phone, address) the
+review-request engine reads off an order.
+
+Nothing else can proceed until it clears, because the version is rejected
+whole: the metaobject subscriptions and the `https://cited.solnix.store` URLs
+in this file do **not** reach the dashboard on a failed deploy.
+
+The tempting shortcut — dropping the two `orders/*` topics to force the deploy
+through — is wrong. They are the trigger for post-fulfilment review requests,
+so a deploy without them is a released version whose collection engine is
+silently dead. Request the access instead.
 
 ---
 

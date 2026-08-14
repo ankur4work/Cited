@@ -1,4 +1,8 @@
-_comment = "Cited — Product Reviews & AI Visibility"
+# Cited — Product Reviews & AI Visibility
+#
+# Keep annotations as `#` comments. The CLI validates this file against a
+# closed schema and rejects any unrecognised top-level key, so a `_comment`
+# string here fails `shopify app deploy` outright.
 
 client_id = "d7e7cc14dd8022014fdaff06422f2542"
 name = "Cited"
@@ -85,4 +89,3 @@ embedded = false
 [build]
 automatically_update_urls_on_dev = true
 dev_store_url = ""
-include_config_on_deploy = true

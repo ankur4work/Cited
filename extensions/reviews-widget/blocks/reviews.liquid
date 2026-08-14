@@ -60,6 +60,15 @@
   endif
 -%}
 
+{%- comment -%}
+  Styles live in assets/, not in a {% stylesheet %} tag: that tag is a theme
+  *section* feature and the extension bundler rejects it in an app block
+  ("Cannot use stylesheet tag in app blocks"). Emitting the link here also
+  means the stylesheet is requested before the markup below it parses, so the
+  block still paints without a flash of unstyled content.
+{%- endcomment -%}
+{{ 'cited-reviews.css' | asset_url | stylesheet_tag }}
+
 <section
   class="cited-reviews"
   id="cited-reviews-{{ block.id }}"
@@ -282,135 +291,6 @@
   {%- endcapture -%}
   <script type="application/ld+json">{{ cited_jsonld }}</script>
 {%- endif -%}
-
-{% stylesheet %}
-/*
- * Scoped entirely under .cited-reviews. No global selectors, no resets,
- * no element-level rules. This block cannot affect the host theme.
- */
-.cited-reviews {
-  --cited-star: #ffb800;
-  --cited-text: #1a1a1a;
-  --cited-muted: #6b7280;
-  --cited-border: #e5e7eb;
-  --cited-radius: 8px;
-  --cited-gap: 16px;
-
-  color: var(--cited-text);
-  display: block;
-  margin-block: calc(var(--cited-gap) * 2);
-}
-
-.cited-reviews__heading {
-  font-size: 1.25rem;
-  line-height: 1.3;
-  margin: 0 0 var(--cited-gap);
-}
-
-.cited-reviews__summary {
-  display: flex;
-  align-items: center;
-  gap: var(--cited-gap);
-  flex-wrap: wrap;
-  padding-bottom: var(--cited-gap);
-  border-bottom: 1px solid var(--cited-border);
-}
-
-.cited-reviews__score {
-  display: flex;
-  align-items: baseline;
-  gap: 2px;
-}
-
-.cited-reviews__score-value { font-size: 2rem; font-weight: 700; line-height: 1; }
-.cited-reviews__score-scale { font-size: 0.875rem; color: var(--cited-muted); }
-.cited-reviews__count { margin: 0; font-size: 0.875rem; color: var(--cited-muted); }
-.cited-reviews__empty { padding: var(--cited-gap) 0; color: var(--cited-muted); }
-
-.cited-reviews__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: var(--cited-gap);
-}
-
-.cited-review {
-  padding: var(--cited-gap) 0;
-  border-bottom: 1px solid var(--cited-border);
-}
-
-.cited-review__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.cited-review__title { font-size: 1rem; font-weight: 600; margin: 0; }
-
-.cited-review__meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 4px;
-  font-size: 0.8125rem;
-  color: var(--cited-muted);
-}
-
-/*
- * Deliberately NOT driven by a theme setting or custom property. Every other
- * colour here is merchant-configurable; this one is hard-coded so a merchant
- * cannot recolour our order-match badge into Shop purple (#5A31F4) and
- * accidentally produce something that reads as the official "Verified by
- * Shop" badge. See the comment at the badge markup.
- */
-.cited-review__verified {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  color: #0a7c42;
-  font-weight: 500;
-}
-
-.cited-review__body { margin-top: 8px; line-height: 1.6; }
-
-.cited-review__media { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-
-.cited-review__media-item {
-  width: 88px;
-  height: 88px;
-  object-fit: cover;
-  border-radius: var(--cited-radius);
-  border: 1px solid var(--cited-border);
-}
-
-.cited-review__reply {
-  margin-top: 10px;
-  padding: 10px 12px;
-  background: rgba(0, 0, 0, 0.03);
-  border-radius: var(--cited-radius);
-  font-size: 0.875rem;
-}
-
-.cited-review__reply-label { font-weight: 600; display: block; margin-bottom: 2px; }
-.cited-review__reply p { margin: 0; }
-
-.cited-reviews__more {
-  display: inline-block;
-  margin-top: var(--cited-gap);
-  padding: 8px 16px;
-  border: 1px solid var(--cited-border);
-  border-radius: var(--cited-radius);
-  color: inherit;
-  text-decoration: none;
-  font-size: 0.875rem;
-}
-
-.cited-stars { display: inline-flex; gap: 1px; line-height: 0; }
-.cited-stars svg { display: block; }
-.cited-stars__star { color: var(--cited-border); }
-.cited-stars__star--on { color: var(--cited-star); }
-
-@media (prefers-reduced-motion: no-preference) {
-  .cited-reviews__more { transition: background-color 120ms ease; }
-}
-{% endstylesheet %}
 
 {% schema %}
 {
