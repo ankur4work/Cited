@@ -95,9 +95,11 @@ Everything below the line is now verification against a real dev store, not cons
 - [x] **Step 2 granted** — test access on the dev store, 2026-08-14
 - [x] R3: metaobject CREATE/UPDATE/DELETE webhooks subscribed with `filter`, handler reconciles inbound changes
 - [x] R4: verified badge resolved against the official-asset rule
-- [ ] `SHOPIFY_SCOPES` updated in the Coolify environment — **not done, and it will roll back the deploy** if missed (§6.3)
+- [x] `SHOPIFY_SCOPES` set in the Coolify environment, including `write_product_reviews` (§6.3)
+- [x] Deployed — `cited-web` and `cited-worker` live at `https://cited.solnix.store`, migrations applied, worker consuming
 - [ ] Dev store created, `dev_store_url` set in `shopify.app.toml`, app installed on it
 - [ ] `shopify app deploy` run once — confirms the `filter` key and registers the subscriptions
+- [ ] App URL + redirect URLs in the Partner Dashboard pointed at `https://cited.solnix.store` (`shopify.app.toml` still says `localhost:3000`)
 - [ ] Reviews demonstrably syndicating: create a review → metaobject appears in the dev store
 - [ ] `reviews.rating` and `reviews.rating_count` populated and correct on the product (API-only — not visible in admin, verify via GraphQL)
 - [ ] Ratings visibly rendering **in the Shop app** on the dev shop
@@ -144,7 +146,7 @@ Approval changes the granted scope set, and three places encode it. All three mu
 
 1. ✅ **`shopify.app.toml`** — append `write_product_reviews` to `access_scopes.scopes`. *(done 2026-08-14)*
 2. ✅ **`lib/shopify/app-identity.ts`** — append it to `APP_SCOPES`. This constant is compared against the live env in the health check, so a mismatch **fails every production health check** and rolls back the deploy in Coolify. *(done 2026-08-14)*
-3. ⚠️ **`.env` / Coolify env** — append it to `SHOPIFY_SCOPES` (it currently sits separately in `SHOPIFY_SCOPES_RESTRICTED`). `.env.example` is updated; **the live Coolify env var is not**, and the health check compares all three — so deploying before setting it there will roll the release back.
+3. ✅ **`.env` / Coolify env** — `SHOPIFY_SCOPES` set on both `cited-web` and `cited-worker` including `write_product_reviews`, so all three sources agree and the health check passes. *(done 2026-08-14)*
 
 Then, per store:
 
