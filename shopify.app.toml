@@ -3,7 +3,7 @@ _comment = "Cited — Product Reviews & AI Visibility"
 client_id = "d7e7cc14dd8022014fdaff06422f2542"
 name = "Cited"
 handle = "cited"
-application_url = "https://localhost:3000"
+application_url = "https://cited.solnix.store"
 embedded = true
 
 [access_scopes]
@@ -19,9 +19,16 @@ scopes = "read_products,read_orders,read_customers,read_metaobjects,write_produc
 use_legacy_install_flow = false
 
 [auth]
+# Must match the deployed host exactly — Shopify rejects an OAuth callback to
+# any URL not listed here, and the comparison is literal (scheme, host, path).
+#
+# No localhost entries: `automatically_update_urls_on_dev = true` below means
+# `shopify app dev` rewrites these to its tunnel URL for the duration of a dev
+# session and restores them on the next deploy, so hardcoding a local pair
+# would only add URLs that are never the ones actually in use.
 redirect_urls = [
-  "https://localhost:3000/api/auth/callback",
-  "https://localhost:3000/api/auth/shopify/callback",
+  "https://cited.solnix.store/api/auth/callback",
+  "https://cited.solnix.store/api/auth/shopify/callback",
 ]
 
 [webhooks]

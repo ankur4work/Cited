@@ -99,7 +99,7 @@ Everything below the line is now verification against a real dev store, not cons
 - [x] Deployed — `cited-web` and `cited-worker` live at `https://cited.solnix.store`, migrations applied, worker consuming
 - [ ] Dev store created, `dev_store_url` set in `shopify.app.toml`, app installed on it
 - [ ] `shopify app deploy` run once — confirms the `filter` key and registers the subscriptions
-- [ ] App URL + redirect URLs in the Partner Dashboard pointed at `https://cited.solnix.store` (`shopify.app.toml` still says `localhost:3000`)
+- [x] App URL + redirect URLs set to `https://cited.solnix.store` in `shopify.app.toml` — reaches the Partner Dashboard on the next `shopify app deploy`
 - [ ] Reviews demonstrably syndicating: create a review → metaobject appears in the dev store
 - [ ] `reviews.rating` and `reviews.rating_count` populated and correct on the product (API-only — not visible in admin, verify via GraphQL)
 - [ ] Ratings visibly rendering **in the Shop app** on the dev shop
