@@ -98,7 +98,9 @@ Everything below the line is now verification against a real dev store, not cons
 - [x] `SHOPIFY_SCOPES` set in the Coolify environment, including `write_product_reviews` (§6.3)
 - [x] Deployed — `cited-web` and `cited-worker` live at `https://cited.solnix.store`, migrations applied, worker consuming
 - [ ] Dev store created, `dev_store_url` set in `shopify.app.toml`, app installed on it
-- [ ] 🔴 **Protected customer data access approved** — blocks `shopify app deploy`, see §4.1
+- [ ] 🔴 **Protected customer data access approved** — blocks `shopify app deploy`, see §4.1 (answers drafted in §4.2)
+- [ ] 🔴 **Five missing webhook route handlers built** — including all three mandatory compliance topics, see §4.3
+- [ ] Transit encryption fixed: `sslmode=require` on Postgres, `rediss://` or private network for Redis (§4.2)
 - [ ] `shopify app deploy` run once — confirms the `filter` key and registers the subscriptions
 - [x] App URL + redirect URLs set to `https://cited.solnix.store` in `shopify.app.toml` — reaches the Partner Dashboard on the next `shopify app deploy`
 - [ ] Reviews demonstrably syndicating: create a review → metaobject appears in the dev store
@@ -138,6 +140,81 @@ The tempting shortcut — dropping the two `orders/*` topics to force the deploy
 through — is wrong. They are the trigger for post-fulfilment review requests,
 so a deploy without them is a released version whose collection engine is
 silently dead. Request the access instead.
+
+### 4.2 Protected customer data — declared answers (drafted 2026-08-16)
+
+**Step 1 — data use.** Reason: **App functionality** only. The app cannot
+function without matching an order to a reviewer. Not customer service, store
+management, personalization or analytics — none describe what we do. Not
+marketing: a review request solicits feedback rather than promoting a product,
+and the UGC→ad-creative feature exports review *media*, not customer data.
+
+**Step 1 — fields: Name and Email. Nothing else.** This is not a judgment
+call; it is exactly what `jobs/processors/ingest-orders.ts:73` asks Shopify
+for (`customer { email firstName lastName }`). Phone and Address are read
+nowhere — the only `countryCode` in the schema is on `Store`, i.e. the
+merchant's shop. Note `customerName` is currently written but never read; it
+is ingested for the review-request greeting that has not shipped yet.
+
+**Step 2 — data protection details.** Answers below are what is *true today*,
+not what we intend. Shopify does not require all-Yes; this is a risk
+assessment. A false attestation on a scope Shopify states may be audited at
+any time is a far worse position than a truthful mixed answer.
+
+| Question | Answer | Basis |
+|---|---|---|
+| Minimum personal data | Yes | Email + name only, per the query above |
+| Disclose what we process, and why | **No** | No privacy policy exists; `DPA_URL` / `PRIVACY_CONTACT_EMAIL` are placeholder defaults pointing at nothing |
+| Limit use to that purpose | Yes | Email → order matching + send; name → greeting; nothing else reads either |
+| DPA with merchants | **No** | No such document exists |
+| Respect consent decisions | N/A *today* | No pixel and no email engine are implemented, so nothing is consent-gated yet. `ANALYTICS_PIXEL_DEFAULT_ENABLED` defaults **true**, so this flips the moment either ships |
+| Opt-out of data being sold | N/A | We neither sell nor share personal data |
+| Automated decision-making opt-out | N/A | AI classifies review spam; declining to publish a review is not a legal or similarly significant effect |
+| Retention periods | **No** | No purge job, no retention config, no policy |
+| Encrypt at rest and in transit | **No** | App-level encryption is sound (AES-256-GCM emails/tokens, HMAC match hash, never logged). But `DATABASE_URL` lacks `sslmode=require` and `REDIS_URL` is plain `redis://`, both to a public IP — customer emails cross the internet unencrypted |
+| Encrypt backups | **No** | No backup configuration exists |
+| Separate test and production data | **No** | `docker-compose.yml` provides a local stack (5433/6380), but the working `.env` is `NODE_ENV=development` pointed at the *remote* datastores |
+| Data loss prevention | **No** | Not implemented or documented |
+| Limit staff access | Yes | Solo operator |
+| Strong staff passwords | Yes, conditional | Nothing in the app governs this; true only if Partners/GitHub/server all have strong unique credentials and 2FA |
+| Log access to personal data | **No** | No audit logging of any kind |
+| Security incident response policy | **No** | Not written |
+| Audits / certifications | *leave blank* | We have none |
+
+**Roughly a day of work flips five of these to Yes:** add `sslmode=require`
+to Postgres and move Redis to `rediss://` or a private network; repoint the
+dev `.env` at the local docker stack; enable encrypted backups; write the
+privacy policy, DPA and incident-response documents.
+
+**Still needs code**, on top of the five missing webhook handlers in §4.3:
+retention/purge jobs and audit logging.
+
+The transit-encryption gap is worth fixing regardless of this form — a
+publicly reachable Postgres and Redis holding customer emails is a live
+exposure, not a paperwork item.
+
+### 4.3 Only one of six configured webhook routes exists (found 2026-08-16)
+
+`shopify.app.toml` subscribes to six endpoints. The app implements **three
+route handlers in total**: `api/auth`, `api/auth/callback`, and
+`api/webhooks/metaobjects`. So these are all 404s:
+
+- `/api/webhooks/privacy` — **the three mandatory compliance topics**
+  (`customers/data_request`, `customers/redact`, `shop/redact`)
+- `/api/webhooks/orders` — the very topics §4.1 requests access for
+- `/api/webhooks/products`, `/api/webhooks/app-uninstalled`,
+  `/api/webhooks/app-subscriptions-update`
+
+There is also a contradiction to resolve: `lib/shopify/client.ts:40-45`
+declares the compliance topics as three *separate* paths
+(`/api/webhooks/customers-data-request`, `-customers-redact`, `-shop-redact`)
+while the toml routes all three to one `/api/webhooks/privacy`. Neither set is
+implemented, so pick one before building.
+
+Two consequences worth being explicit about. Erasure is the requirement Step 2
+attests to, and it cannot work without the compliance handler. And even once
+protected customer data access is granted, no order webhook would be received,
+so the review-request engine still would not run.
 
 ---
 
