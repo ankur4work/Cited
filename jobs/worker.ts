@@ -1,12 +1,17 @@
 import { Worker, type Job } from 'bullmq';
 import {
   connection,
+  maintenanceQueue,
   QUEUES,
   type IngestionJobData,
   type IngestionJobName,
+  type MaintenanceJobData,
+  type MaintenanceJobName,
   type SyndicationJobData,
   type SyndicationJobName,
 } from './queue';
+import { compliancePurgeProcessor } from './processors/compliance-purge';
+import { retentionSweepProcessor } from './processors/retention-sweep';
 import { ingestProductsProcessor } from './processors/ingest-products';
 import { ingestOrdersProcessor } from './processors/ingest-orders';
 import { syndicateReviewProcessor } from './processors/syndicate-review';
@@ -25,9 +30,9 @@ import { prisma } from '@/lib/prisma';
  * loop, and the web tier needs to scale on request volume while the worker
  * scales on job volume.
  *
- * Only the ingestion queue has processors so far. Other queues are declared
- * in queue.ts and are intentionally left unconsumed rather than stubbed —
- * a no-op processor would silently ACK real work as done.
+ * Consumes ingestion, syndication and maintenance. The email, import, AI and
+ * AEO queues are declared in queue.ts and intentionally left unconsumed rather
+ * than stubbed — a no-op processor would silently ACK real work as done.
  */
 
 type IngestionHandler = (job: Job<IngestionJobData, unknown, IngestionJobName>) => Promise<void>;
@@ -139,7 +144,101 @@ syndicationWorker.on('failed', async (job, err) => {
   }
 });
 
-logger.info({ queues: [QUEUES.INGESTION, QUEUES.SYNDICATION] }, 'Cited worker started');
+// ── Maintenance ──────────────────────────────────────────────
+// GDPR/CCPA erasure and the retention sweep. Concurrency of 2 on purpose:
+// these jobs delete across many tables and there is no throughput argument for
+// running a dozen at once, while there is a clear argument for keeping the
+// blast radius of a bug small.
+
+type MaintenanceHandler = (
+  job: Job<MaintenanceJobData, unknown, MaintenanceJobName>,
+) => Promise<void>;
+
+const maintenanceHandlers: Record<MaintenanceJobName, MaintenanceHandler> = {
+  'compliance:purge': compliancePurgeProcessor,
+  'retention:sweep': retentionSweepProcessor,
+  // Declared in queue.ts but not yet built. Throwing beats a no-op handler,
+  // which would ACK real work as done and silently retain media forever.
+  'media-lifecycle': async () => {
+    throw new Error('media-lifecycle processor not implemented');
+  },
+};
+
+const maintenanceWorker = new Worker<MaintenanceJobData, unknown, MaintenanceJobName>(
+  QUEUES.MAINTENANCE,
+  async (job) => {
+    const handler = maintenanceHandlers[job.name];
+    if (!handler) throw new Error(`No handler for job name ${job.name}`);
+    return handler(job);
+  },
+  { connection, concurrency: 2 },
+);
+
+maintenanceWorker.on('failed', async (job, err) => {
+  if (!job) return;
+  logger.error(
+    {
+      queue: QUEUES.MAINTENANCE,
+      name: job.name,
+      jobId: job.id,
+      storeId: job.data?.storeId,
+      complianceRequestId: job.data?.complianceRequestId,
+      attempt: job.attemptsMade,
+      err: err.message,
+    },
+    'Maintenance job failed',
+  );
+
+  if (job.attemptsMade >= (job.opts.attempts ?? 1)) {
+    // A compliance job that exhausts its retries is an unmet legal obligation
+    // on a 30-day clock, not just a failed job. It goes to the DLQ like
+    // anything else, but at a severity that should page someone.
+    if (job.name === 'compliance:purge') {
+      logger.error(
+        {
+          alert: true,
+          complianceRequestId: job.data?.complianceRequestId,
+          shopDomain: job.data?.shopDomain,
+          type: job.data?.type,
+        },
+        'COMPLIANCE REQUEST FAILED after all retries — must be completed manually before its due date',
+      );
+    }
+    await moveToDlq(
+      job as Job<{ storeId: string }>,
+      err,
+    ).catch((e) => logger.error({ err: (e as Error).message }, 'Failed to move job to DLQ'));
+  }
+});
+
+/**
+ * Daily retention sweep.
+ *
+ * Registered here rather than by an external cron so that retention cannot be
+ * silently switched off by forgetting to configure a scheduler — if the worker
+ * is running, the sweep is scheduled. BullMQ keys repeatable jobs by name and
+ * pattern, so re-registering on every boot replaces rather than accumulates.
+ */
+async function scheduleRecurringJobs(): Promise<void> {
+  await maintenanceQueue.add(
+    'retention:sweep',
+    {},
+    {
+      repeat: { pattern: '17 3 * * *' }, // 03:17 daily — off the hour, away from peak
+      jobId: 'retention:sweep:daily',
+    },
+  );
+  logger.info('Retention sweep scheduled (daily 03:17)');
+}
+
+void scheduleRecurringJobs().catch((err) =>
+  logger.error({ err: (err as Error).message }, 'Failed to schedule recurring maintenance jobs'),
+);
+
+logger.info(
+  { queues: [QUEUES.INGESTION, QUEUES.SYNDICATION, QUEUES.MAINTENANCE] },
+  'Cited worker started',
+);
 
 /**
  * Graceful shutdown.
@@ -151,7 +250,11 @@ logger.info({ queues: [QUEUES.INGESTION, QUEUES.SYNDICATION] }, 'Cited worker st
 async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, 'Worker shutting down — draining in-flight jobs');
   try {
-    await Promise.all([ingestionWorker.close(), syndicationWorker.close()]);
+    await Promise.all([
+      ingestionWorker.close(),
+      syndicationWorker.close(),
+      maintenanceWorker.close(),
+    ]);
     await prisma.$disconnect();
     await connection.quit();
   } catch (err) {

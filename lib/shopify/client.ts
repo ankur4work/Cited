@@ -37,11 +37,24 @@ export const shopify = shopifyApi({
   },
 });
 
+/**
+ * The webhooks Shopify requires of every app, and where they are served.
+ *
+ * Subscriptions themselves are declared in `shopify.app.toml` and registered
+ * by `shopify app deploy` — this constant does not create them. It exists so
+ * the paths are asserted somewhere the type checker and the tests can see,
+ * because the failure mode is silent: a route that does not exist answers 404,
+ * Shopify records a delivery failure, and nothing in the app ever notices.
+ *
+ * The three compliance topics share ONE route and are dispatched by the topic
+ * header. This previously listed three separate paths, none of which existed
+ * and none of which matched the toml.
+ */
 export const MANDATORY_WEBHOOKS = [
   { topic: 'app/uninstalled', path: '/api/webhooks/app-uninstalled' },
-  { topic: 'customers/data_request', path: '/api/webhooks/customers-data-request' },
-  { topic: 'customers/redact', path: '/api/webhooks/customers-redact' },
-  { topic: 'shop/redact', path: '/api/webhooks/shop-redact' },
+  { topic: 'customers/data_request', path: '/api/webhooks/privacy' },
+  { topic: 'customers/redact', path: '/api/webhooks/privacy' },
+  { topic: 'shop/redact', path: '/api/webhooks/privacy' },
 ] as const;
 
 export interface ThrottleStatus {

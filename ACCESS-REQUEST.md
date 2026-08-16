@@ -99,8 +99,10 @@ Everything below the line is now verification against a real dev store, not cons
 - [x] Deployed — `cited-web` and `cited-worker` live at `https://cited.solnix.store`, migrations applied, worker consuming
 - [ ] Dev store created, `dev_store_url` set in `shopify.app.toml`, app installed on it
 - [ ] 🔴 **Protected customer data access approved** — blocks `shopify app deploy`, see §4.1 (answers drafted in §4.2)
-- [ ] 🔴 **Five missing webhook route handlers built** — including all three mandatory compliance topics, see §4.3
-- [ ] Transit encryption fixed: `sslmode=require` on Postgres, `rediss://` or private network for Redis (§4.2)
+- [x] **Five missing webhook route handlers built** — including all three mandatory compliance topics, see §4.3
+- [x] Transit encryption enforced in code — production boot fails without TLS on both datastores (§4.4)
+- [x] Retention periods and audit logging implemented (§4.4)
+- [ ] Operator actions: repoint dev `.env`, add TLS to the production connection strings, enable encrypted backups, publish the policy and DPA (§4.5)
 - [ ] `shopify app deploy` run once — confirms the `filter` key and registers the subscriptions
 - [x] App URL + redirect URLs set to `https://cited.solnix.store` in `shopify.app.toml` — reaches the Partner Dashboard on the next `shopify app deploy`
 - [ ] Reviews demonstrably syndicating: create a review → metaobject appears in the dev store
@@ -161,60 +163,109 @@ not what we intend. Shopify does not require all-Yes; this is a risk
 assessment. A false attestation on a scope Shopify states may be audited at
 any time is a far worse position than a truthful mixed answer.
 
+The first assessment of these answers found **nine** Nos. The compliance build
+(§4.4) closed most of them. Current state:
+
 | Question | Answer | Basis |
 |---|---|---|
 | Minimum personal data | Yes | Email + name only, per the query above |
-| Disclose what we process, and why | **No** | No privacy policy exists; `DPA_URL` / `PRIVACY_CONTACT_EMAIL` are placeholder defaults pointing at nothing |
+| Disclose what we process, and why | Yes¹ | `docs/PRIVACY.md` — states the fields, purposes, retention and erasure behaviour |
 | Limit use to that purpose | Yes | Email → order matching + send; name → greeting; nothing else reads either |
-| DPA with merchants | **No** | No such document exists |
+| DPA with merchants | Yes¹ | `docs/DPA.md` |
 | Respect consent decisions | N/A *today* | No pixel and no email engine are implemented, so nothing is consent-gated yet. `ANALYTICS_PIXEL_DEFAULT_ENABLED` defaults **true**, so this flips the moment either ships |
 | Opt-out of data being sold | N/A | We neither sell nor share personal data |
 | Automated decision-making opt-out | N/A | AI classifies review spam; declining to publish a review is not a legal or similarly significant effect |
-| Retention periods | **No** | No purge job, no retention config, no policy |
-| Encrypt at rest and in transit | **No** | App-level encryption is sound (AES-256-GCM emails/tokens, HMAC match hash, never logged). But `DATABASE_URL` lacks `sslmode=require` and `REDIS_URL` is plain `redis://`, both to a public IP — customer emails cross the internet unencrypted |
-| Encrypt backups | **No** | No backup configuration exists |
-| Separate test and production data | **No** | `docker-compose.yml` provides a local stack (5433/6380), but the working `.env` is `NODE_ENV=development` pointed at the *remote* datastores |
-| Data loss prevention | **No** | Not implemented or documented |
+| Retention periods | Yes | `lib/compliance/retention.ts` + a daily sweep registered by the worker itself, so it cannot be switched off by forgetting to configure a cron |
+| Encrypt at rest and in transit | Yes² | AES-256-GCM at rest, unchanged. In transit is now **enforced**: production boot fails unless Postgres sets `sslmode` and Redis uses `rediss://` or is loopback-local |
+| Encrypt backups | **No** | Server configuration, outside the repo — see §4.5 |
+| Separate test and production data | Yes² | `.env.example` points at the local docker stack and says why; the live `.env` still needs repointing — see §4.5 |
+| Data loss prevention | Yes¹ | Backups, tested restore and access control, documented in `docs/INCIDENT-RESPONSE.md` §5 — conditional on §4.5 |
 | Limit staff access | Yes | Solo operator |
 | Strong staff passwords | Yes, conditional | Nothing in the app governs this; true only if Partners/GitHub/server all have strong unique credentials and 2FA |
-| Log access to personal data | **No** | No audit logging of any kind |
-| Security incident response policy | **No** | Not written |
+| Log access to personal data | Yes | `audit_logs` + `lib/audit.ts` — decryption, bulk export, erasure and retention sweeps |
+| Security incident response policy | Yes¹ | `docs/INCIDENT-RESPONSE.md` |
 | Audits / certifications | *leave blank* | We have none |
 
-**Roughly a day of work flips five of these to Yes:** add `sslmode=require`
-to Postgres and move Redis to `rediss://` or a private network; repoint the
-dev `.env` at the local docker stack; enable encrypted backups; write the
-privacy policy, DPA and incident-response documents.
+¹ Drafted and committed, but each carries `{{PLACEHOLDER}}` fields only you can
+fill (legal entity, address, sub-processor regions, transfer mechanism). The
+privacy policy and DPA must also be **published at a URL** and wired to
+`DPA_URL` / `PRIVACY_CONTACT_EMAIL` before the answer is honestly Yes.
 
-**Still needs code**, on top of the five missing webhook handlers in §4.3:
-retention/purge jobs and audit logging.
+² True once the operator actions in §4.5 are done. The code now refuses to run
+otherwise, which is the point — this can no longer regress silently.
 
-The transit-encryption gap is worth fixing regardless of this form — a
-publicly reachable Postgres and Redis holding customer emails is a live
-exposure, not a paperwork item.
+### 4.5 Operator actions still outstanding
 
-### 4.3 Only one of six configured webhook routes exists (found 2026-08-16)
+None of these are code, and none can be done from the repository:
 
-`shopify.app.toml` subscribes to six endpoints. The app implements **three
-route handlers in total**: `api/auth`, `api/auth/callback`, and
-`api/webhooks/metaobjects`. So these are all 404s:
+1. **Repoint the live `.env`** at the local docker stack for development
+   (`localhost:5433` / `localhost:6380`). Today it is `NODE_ENV=development`
+   pointed at the production datastores, so dev runs read and write real
+   customer data.
+2. **Add TLS to the production connection strings** — `?sslmode=require` on
+   Postgres, `rediss://` on Redis. The app will now refuse to boot without
+   them, so this must happen before the next production deploy.
+3. **Enable encrypted backups** on the database host, and run one restore into
+   a scratch environment to confirm it works. This is the only remaining
+   **No**.
+4. **Fill the `{{PLACEHOLDER}}` fields** in the three documents, have them
+   reviewed, publish the privacy policy and DPA, and point `DPA_URL` and
+   `PRIVACY_CONTACT_EMAIL` at them.
 
-- `/api/webhooks/privacy` — **the three mandatory compliance topics**
-  (`customers/data_request`, `customers/redact`, `shop/redact`)
-- `/api/webhooks/orders` — the very topics §4.1 requests access for
-- `/api/webhooks/products`, `/api/webhooks/app-uninstalled`,
-  `/api/webhooks/app-subscriptions-update`
+### 4.3 Webhook route gap — RESOLVED 2026-08-16
 
-There is also a contradiction to resolve: `lib/shopify/client.ts:40-45`
-declares the compliance topics as three *separate* paths
-(`/api/webhooks/customers-data-request`, `-customers-redact`, `-shop-redact`)
-while the toml routes all three to one `/api/webhooks/privacy`. Neither set is
-implemented, so pick one before building.
+`shopify.app.toml` subscribed to six endpoints while the app implemented three
+route handlers in total (`api/auth`, `api/auth/callback`,
+`api/webhooks/metaobjects`). Five of six were 404s, including all three
+mandatory compliance topics and the `orders/*` topics §4.1 requests access
+for. All five are now built:
 
-Two consequences worth being explicit about. Erasure is the requirement Step 2
-attests to, and it cannot work without the compliance handler. And even once
-protected customer data access is granted, no order webhook would be received,
-so the review-request engine still would not run.
+| Route | Topics | Behaviour |
+|---|---|---|
+| `/api/webhooks/privacy` | `customers/data_request`, `customers/redact`, `shop/redact` | Records a ledger row, enqueues the purge |
+| `/api/webhooks/orders` | `orders/paid`, `orders/fulfilled` | Debounced incremental order pull |
+| `/api/webhooks/products` | `products/create\|update\|delete` | Debounced incremental catalog pull |
+| `/api/webhooks/app-uninstalled` | `app/uninstalled` | Clears the token, starts the 48h redact clock |
+| `/api/webhooks/app-subscriptions-update` | `app_subscriptions/update` | Re-reads the subscription, writes a BillingEvent |
+
+The contradiction is resolved too: `lib/shopify/client.ts` declared the
+compliance topics as three separate paths that matched neither the toml nor
+reality. It now names the single `/api/webhooks/privacy` route, and the
+constant is documented as an assertion target rather than a registration
+mechanism — subscriptions come from the toml.
+
+One design note on the order and product routes. The ingestion processors run
+Shopify **bulk** operations and a shop may only have one in flight at a time,
+so a job per webhook would produce contention rather than throughput — a flash
+sale would be hundreds of jobs competing for one slot. Instead a burst
+collapses into a single delayed pull per store, with the delay acting as the
+debounce window.
+
+### 4.4 What the compliance build added (2026-08-16)
+
+| Concern | Implementation |
+|---|---|
+| Erasure | `lib/compliance/redact.ts` — customer and shop redaction |
+| Payload parsing | `lib/compliance/payload.ts` (+ 13 tests) — numeric order IDs → GIDs, large-ID safety, case normalisation |
+| Request ledger | `ComplianceRequest` — every request recorded with what was erased and when; survives the store deletion it describes |
+| Execution | `jobs/processors/compliance-purge.ts` on the maintenance queue, 6 attempts with backoff |
+| Retention | `lib/compliance/retention.ts` + `jobs/processors/retention-sweep.ts`, scheduled daily by the worker |
+| Audit trail | `AuditLog` + `lib/audit.ts` |
+| Transit encryption | `lib/env.ts` refuses to boot in production without TLS on both datastores |
+| Documents | `docs/PRIVACY.md`, `docs/DPA.md`, `docs/INCIDENT-RESPONSE.md` |
+
+Three decisions in there are judgement calls a reviewer may ask about, so they
+are argued in the code rather than left implicit:
+
+- **Reviews are anonymised, not deleted.** Identifiers go; the rating and body
+  stay. Deleting them would silently move a merchant's public star rating.
+  Once the link to a person is severed the remaining row is not personal data.
+- **Suppression entries survive erasure.** They hold a keyed hash and "do not
+  email this person". Deleting one would mean honouring the erasure by
+  breaking the opt-out.
+- **Redacted reviews are re-syndicated.** The author name is a field on the
+  Shopify metaobject too, so stripping it in Postgres alone would leave the
+  erased name rendering on the storefront.
 
 ---
 

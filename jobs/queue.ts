@@ -159,11 +159,41 @@ export const aeoQueue = new Queue<AeoJobData, unknown, 'aeo:probe-store'>(QUEUES
 });
 
 // ── Maintenance ──────────────────────────────────────────────
-export const maintenanceQueue = new Queue<
-  Record<string, unknown>,
-  unknown,
-  'redact-purge' | 'media-lifecycle'
->(QUEUES.MAINTENANCE, { connection, defaultJobOptions });
+export type MaintenanceJobName = 'compliance:purge' | 'retention:sweep' | 'media-lifecycle';
+
+export interface MaintenanceJobData {
+  /** Null for a compliance request against a shop that never installed. */
+  storeId?: string | null;
+  shopDomain?: string;
+
+  // ── compliance:purge only ──────────────────────────────────
+  complianceRequestId?: string;
+  type?: 'DATA_REQUEST' | 'CUSTOMER_REDACT' | 'SHOP_REDACT';
+  /**
+   * Plaintext, for the life of the job only. The ledger stores a hash; erasure
+   * needs the same hash to match rows, and a subject access request needs the
+   * address itself to be worth anything. It is never written to a table.
+   */
+  customerEmail?: string | null;
+  orderGids?: string[];
+}
+
+export const maintenanceQueue = new Queue<MaintenanceJobData, unknown, MaintenanceJobName>(
+  QUEUES.MAINTENANCE,
+  {
+    connection,
+    defaultJobOptions: {
+      ...defaultJobOptions,
+      // Erasure is a legal obligation on a 30-day clock, so it retries well
+      // past the point we would abandon ordinary work. Six attempts with
+      // exponential backoff spans hours, not minutes.
+      attempts: 6,
+      // Kept far longer than the default. "Show me the job that erased this
+      // customer" is a question asked weeks later, during an audit.
+      removeOnComplete: { count: 5000, age: 90 * 86_400 },
+    },
+  },
+);
 
 // ── Dead letter ──────────────────────────────────────────────
 // Accepts ANY failed job shape. Typed loosely on purpose: strict typing here

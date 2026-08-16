@@ -1,6 +1,14 @@
 import { z } from 'zod';
 
-const EnvSchema = z.object({
+/**
+ * The field definitions, kept as a bare ZodObject.
+ *
+ * Split from `EnvSchema` below because `.superRefine()` returns a ZodEffects,
+ * which has no `.shape` — and `withoutEmptyStrings` needs the key list to
+ * filter process.env. Collapsing these two into one const makes `.shape`
+ * undefined and crashes the process on boot.
+ */
+const EnvObject = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 
@@ -86,6 +94,53 @@ const EnvSchema = z.object({
     .transform((v) => v === 'true'),
 });
 
+const EnvSchema = EnvObject
+  /**
+   * Refuse to boot in production against an unencrypted datastore connection.
+   *
+   * Both stores hold customer personal data: Postgres has the encrypted order
+   * emails and their lookup hashes, Redis has job payloads that carry a
+   * plaintext address for the life of a compliance job. Encrypting a column at
+   * rest and then shipping it over a cleartext socket protects nothing, and
+   * "do you encrypt data in transit?" is a question Shopify asks directly.
+   *
+   * Enforced here rather than left to deployment config because a connection
+   * string is edited under time pressure, and a missing `sslmode` is invisible
+   * — everything keeps working, just unencrypted. Failing the boot is the only
+   * feedback that arrives before the data does.
+   *
+   * Development is exempt: the local docker stack is loopback-only.
+   */
+  .superRefine((cfg, ctx) => {
+    if (cfg.NODE_ENV !== 'production') return;
+
+    const pgTlsDisabled =
+      !/[?&]sslmode=/.test(cfg.DATABASE_URL) || /[?&]sslmode=disable/.test(cfg.DATABASE_URL);
+
+    if (pgTlsDisabled) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['DATABASE_URL'],
+        message:
+          'DATABASE_URL must set sslmode (e.g. ?sslmode=require) in production — customer data must not cross the network unencrypted',
+      });
+    }
+
+    // `rediss://` is Redis over TLS. A loopback or unix-socket Redis is
+    // accepted because there is no network hop to intercept.
+    const redisIsLocal = /@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(cfg.REDIS_URL)
+      || /^redis:\/\/(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(cfg.REDIS_URL);
+
+    if (!cfg.REDIS_URL.startsWith('rediss://') && !redisIsLocal) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['REDIS_URL'],
+        message:
+          'REDIS_URL must use rediss:// (TLS) in production unless Redis is loopback-local — job payloads carry customer email addresses',
+      });
+    }
+  });
+
 export type Env = z.infer<typeof EnvSchema>;
 
 /**
@@ -145,7 +200,7 @@ const BUILD_STUB: Env = {
  */
 function withoutEmptyStrings(source: NodeJS.ProcessEnv): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const key of Object.keys(EnvSchema.shape)) {
+  for (const key of Object.keys(EnvObject.shape)) {
     const value = source[key];
     if (value !== undefined && value !== '') out[key] = value;
   }

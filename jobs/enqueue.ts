@@ -1,5 +1,10 @@
-import { ingestionQueue, syndicationQueue, emailQueue, aiQueue } from './queue';
-import type { SyndicationJobData, SyndicationJobName } from './queue';
+import { ingestionQueue, syndicationQueue, emailQueue, aiQueue, maintenanceQueue } from './queue';
+import type {
+  SyndicationJobData,
+  SyndicationJobName,
+  MaintenanceJobData,
+  IngestionJobName,
+} from './queue';
 import { logger } from '@/lib/logger';
 
 /**
@@ -42,6 +47,67 @@ export async function enqueueInstallBackfill(input: {
   );
 
   logger.info({ storeId, shopDomain }, 'Install backfill enqueued');
+}
+
+/**
+ * Debounced incremental catalog/order pull, triggered by a webhook.
+ *
+ * Webhooks arrive one per record; the ingestion processors run Shopify **bulk**
+ * operations, and a shop may only have one bulk query in flight at a time. One
+ * job per webhook would therefore mostly produce conflicts against the same
+ * shop rather than throughput — a hundred orders in a flash sale would be a
+ * hundred jobs competing for one slot.
+ *
+ * So a burst collapses into a single delayed pull per store. The delay is the
+ * debounce window: while a job sits waiting, BullMQ discards duplicate IDs, so
+ * every further webhook in that window is absorbed by the run already
+ * scheduled. `sinceDays: 1` keeps the pull narrow while still overlapping
+ * generously with the window, so nothing is missed at the boundary.
+ *
+ * Finished jobs are cleared first for the same reason as the syndication
+ * helpers: a completed record survives in the completed set for days, and
+ * would otherwise silently swallow every later enqueue.
+ */
+async function enqueueDebouncedIngestion(
+  name: IngestionJobName,
+  input: { storeId: string; shopDomain: string; delayMs?: number },
+): Promise<void> {
+  const jobId = `webhook:${name}:${input.storeId}`;
+
+  const existing = await ingestionQueue.getJob(jobId);
+  if (existing) {
+    const state = await existing.getState();
+    if (state === 'completed' || state === 'failed') {
+      await existing.remove().catch((err: unknown) =>
+        logger.warn(
+          { jobId, err: (err as Error).message },
+          'Could not clear finished ingestion job before re-enqueue',
+        ),
+      );
+    }
+  }
+
+  await ingestionQueue.add(
+    name,
+    { storeId: input.storeId, shopDomain: input.shopDomain, origin: 'webhook', sinceDays: 1 },
+    { jobId, delay: input.delayMs ?? 60_000 },
+  );
+}
+
+/** Order changed on the shop — pull recent orders once the burst settles. */
+export async function enqueueOrderSync(input: {
+  storeId: string;
+  shopDomain: string;
+}): Promise<void> {
+  await enqueueDebouncedIngestion('ingest:orders', input);
+}
+
+/** Catalog changed — same debounce, so a bulk edit is one pull, not hundreds. */
+export async function enqueueProductSync(input: {
+  storeId: string;
+  shopDomain: string;
+}): Promise<void> {
+  await enqueueDebouncedIngestion('ingest:products', input);
 }
 
 /**
@@ -222,6 +288,46 @@ export async function enqueueReviewRequest(input: {
       jobId: `email:${input.campaignId}:${orderKey}:${reminder}`,
       delay: input.delayMs ?? 0,
     },
+  );
+}
+
+/**
+ * Run a GDPR/CCPA compliance request — data export or erasure.
+ *
+ * jobId is the ledger row, which is itself uniquely keyed on Shopify's webhook
+ * ID, so a redelivered compliance webhook cannot schedule a second purge. A
+ * retained completed job is correct here for the same reason it is for
+ * metaobject reconciliation: this ID identifies one request, not a subject
+ * that keeps changing.
+ *
+ * Note this deliberately does not coalesce by store. Two erasure requests for
+ * two customers of the same shop are two obligations, and collapsing them
+ * would silently discharge only one.
+ */
+export async function enqueueCompliancePurge(input: {
+  complianceRequestId: string;
+  storeId: string | null;
+  shopDomain: string;
+  type: MaintenanceJobData['type'];
+  customerEmail: string | null;
+  orderGids: string[];
+}): Promise<void> {
+  await maintenanceQueue.add(
+    'compliance:purge',
+    {
+      complianceRequestId: input.complianceRequestId,
+      storeId: input.storeId,
+      shopDomain: input.shopDomain,
+      type: input.type,
+      customerEmail: input.customerEmail,
+      orderGids: input.orderGids,
+    },
+    { jobId: `compliance:${input.complianceRequestId}` },
+  );
+
+  logger.info(
+    { shopDomain: input.shopDomain, type: input.type, requestId: input.complianceRequestId },
+    'Compliance request enqueued',
   );
 }
 

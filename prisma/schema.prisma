@@ -129,6 +129,30 @@ enum AeoEngine {
   GOOGLE_AI_OVERVIEW
 }
 
+/// The three mandatory GDPR/CCPA topics every Shopify app must handle.
+enum ComplianceRequestType {
+  DATA_REQUEST // customers/data_request — produce, don't delete
+  CUSTOMER_REDACT // customers/redact
+  SHOP_REDACT // shop/redact — 48h after uninstall
+}
+
+enum ComplianceRequestStatus {
+  RECEIVED
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+}
+
+/// Who caused an audited action. SHOPIFY covers platform-initiated work such
+/// as a compliance webhook, which has no human actor but must still be
+/// attributable.
+enum AuditActor {
+  MERCHANT
+  STAFF
+  SYSTEM
+  SHOPIFY
+}
+
 // ─────────────────────────────────────────────────────────────
 // Tenant
 // ─────────────────────────────────────────────────────────────
@@ -198,6 +222,8 @@ model Store {
   webhookEvents WebhookEvent[]
   media        ReviewMedia[]
   billingEvents BillingEvent[]
+  complianceRequests ComplianceRequest[]
+  auditLogs          AuditLog[]
 
   @@index([plan])
   @@index([uninstalledAt])
@@ -403,6 +429,13 @@ model Review {
   helpfulCount    Int @default(0)
   notHelpfulCount Int @default(0)
 
+  /// Set when a customers/redact stripped the author identifiers from this
+  /// review. The rating and body survive — they are the merchant's product
+  /// feedback and deleting them would silently move every aggregate — but the
+  /// row must be flagged so it is never re-attributed, re-syndicated with an
+  /// author, or counted as a fresh anonymous review.
+  redactedAt DateTime?
+
   /// Semantic embedding for clustering, dedup and insight mining.
   /// 384 dims (MiniLM) — kept local to avoid per-review API cost.
   embedding Unsupported("vector(384)")?
@@ -496,6 +529,11 @@ model Question {
   body      String
   askerName String?
   askerEmailEnc String?
+  /// Lookup key for erasure. Without it a customers/redact could only find a
+  /// questioner by decrypting every askerEmailEnc in the store, so the column
+  /// exists to make the erasure path possible at all — same keyed HMAC as
+  /// Order.customerEmailHash and Review.authorEmailHash.
+  askerEmailHash String?
   status    ReviewStatus @default(PENDING)
 
   createdAt DateTime @default(now())
@@ -506,6 +544,7 @@ model Question {
   answers Answer[]
 
   @@index([storeId, productId, status])
+  @@index([askerEmailHash])
   @@map("questions")
 }
 
@@ -760,4 +799,103 @@ model WebhookEvent {
   @@index([storeId, topic])
   @@index([processedAt])
   @@map("webhook_events")
+}
+
+/// Ledger for the three mandatory compliance topics.
+///
+/// Separate from WebhookEvent, which is a short-lived dedup log. A regulator
+/// or a Shopify audit asks "you received an erasure request on the 3rd — what
+/// did you erase, and when?", and that answer has to outlive a delivery log
+/// that is pruned. Every row is opened on receipt and closed by the purge
+/// processor with a count of what it touched.
+///
+/// Deliberately holds NO personal data: the customer is identified by their
+/// Shopify ID and by the same keyed HMAC used everywhere else, so the record
+/// proving we erased an address does not itself retain the address.
+model ComplianceRequest {
+  id      String  @id @default(cuid())
+  storeId String?
+  /// Kept denormalised: a shop/redact completes by deleting the Store, and
+  /// this row must remain attributable afterwards.
+  shopDomain String
+
+  type   ComplianceRequestType
+  status ComplianceRequestStatus @default(RECEIVED)
+
+  customerShopifyId String?
+  customerEmailHash String?
+  /// Order GIDs Shopify scoped the request to, when it scoped it at all.
+  orderGids         String[] @default([])
+
+  /// `X-Shopify-Webhook-Id`, stable across Shopify's redeliveries.
+  shopifyWebhookId String
+
+  /// Shopify requires a response within 30 days; shop/redact arrives 48h
+  /// after uninstall. Stored so overdue requests are queryable, not implied.
+  dueAt       DateTime
+  completedAt DateTime?
+
+  /// What actually happened: {"orders":3,"reviews":1,"media":2}. Counts only,
+  /// never content.
+  resultJson Json    @default("{}")
+  error      String?
+  attempts   Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  store Store? @relation(fields: [storeId], references: [id], onDelete: SetNull)
+
+  /// One ledger row per delivery. Shopify redelivers compliance webhooks like
+  /// any other, and a second erasure run is wasteful rather than harmful — but
+  /// a second *ledger* row would misreport how many requests we received.
+  @@unique([shopDomain, type, shopifyWebhookId])
+  @@index([status, dueAt])
+  @@index([storeId, type])
+  @@map("compliance_requests")
+}
+
+/// Append-only record of access to personal data.
+///
+/// Exists to answer the protected-customer-data question "do you log access to
+/// personal data?" with something other than a promise. Written whenever
+/// customer-identifying data is read in bulk, decrypted, exported or erased —
+/// not for ordinary review rendering, which touches no identifiers.
+///
+/// Holds no personal data itself: subjects are referenced by internal ID.
+model AuditLog {
+  id      String  @id @default(cuid())
+  storeId String?
+
+  actor   AuditActor @default(SYSTEM)
+  /// Staff email or Shopify user ID when a human is responsible; null for
+  /// SYSTEM and SHOPIFY.
+  actorId String?
+
+  /// Dotted verb, e.g. `customer.email.decrypt`, `order.export`,
+  /// `customer.redact`.
+  action String
+  /// What was acted on — `Order`, `Review`, `Store`.
+  subjectType String?
+  subjectId   String?
+
+  /// True when the action touched customer-identifying data. Lets the
+  /// personal-data subset be queried without parsing action strings.
+  personalData Boolean @default(true)
+
+  /// Count for bulk actions, so one row can cover a 10,000-row export.
+  recordCount Int @default(1)
+
+  /// Request correlation id (lib/request-context.ts), never a raw IP.
+  requestId String?
+  meta      Json    @default("{}")
+
+  createdAt DateTime @default(now())
+
+  store Store? @relation(fields: [storeId], references: [id], onDelete: SetNull)
+
+  @@index([storeId, createdAt(sort: Desc)])
+  @@index([action, createdAt(sort: Desc)])
+  @@index([personalData, createdAt(sort: Desc)])
+  @@map("audit_logs")
 }
