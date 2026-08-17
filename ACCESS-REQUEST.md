@@ -199,7 +199,7 @@ The first assessment of these answers found **nine** Nos. The compliance build
 | Opt-out of data being sold | N/A | We neither sell nor share personal data |
 | Automated decision-making opt-out | N/A | AI classifies review spam; declining to publish a review is not a legal or similarly significant effect |
 | Retention periods | Yes | `lib/compliance/retention.ts` + a daily sweep registered by the worker itself, so it cannot be switched off by forgetting to configure a cron |
-| Encrypt at rest and in transit | Yes² | AES-256-GCM at rest, unchanged. In transit is now **enforced**: production boot fails unless Postgres sets `sslmode` and Redis uses `rediss://` or is loopback-local |
+| Encrypt at rest and in transit | Yes | AES-256-GCM at rest. In transit: production reaches Postgres and Redis over Coolify's **private Docker network** by container hostname, so the traffic never leaves the host. Enforced in `lib/env.ts` — boot fails if either datastore is on a publicly routable host without TLS |
 | Encrypt backups | **No** | Server configuration, outside the repo — see §4.5 |
 | Separate test and production data | Yes² | `.env.example` points at the local docker stack and says why; the live `.env` still needs repointing — see §4.5 |
 | Data loss prevention | Yes¹ | Backups, tested restore and access control, documented in `docs/INCIDENT-RESPONSE.md` §5 — conditional on §4.5 |
@@ -223,17 +223,40 @@ None of these are code, and none can be done from the repository:
 
 1. **Repoint the live `.env`** at the local docker stack for development
    (`localhost:5433` / `localhost:6380`). Today it is `NODE_ENV=development`
-   pointed at the production datastores, so dev runs read and write real
-   customer data.
-2. **Add TLS to the production connection strings** — `?sslmode=require` on
-   Postgres, `rediss://` on Redis. The app will now refuse to boot without
-   them, so this must happen before the next production deploy.
-3. **Enable encrypted backups** on the database host, and run one restore into
+   pointed at the production datastores over their **published public ports**
+   (`91.239.208.85:5460` / `:6390`), so dev runs read and write real customer
+   data across the open internet. This — not the deployed app — is the real
+   transit exposure, and closing it also closes the test/production question.
+2. **Enable encrypted backups** on the database host, and run one restore into
    a scratch environment to confirm it works. This is the only remaining
    **No**.
-4. **Fill the `{{PLACEHOLDER}}` fields** in the three documents, have them
+3. **Fill the `{{PLACEHOLDER}}` fields** in the three documents, have them
    reviewed, publish the privacy policy and DPA, and point `DPA_URL` and
    `PRIVACY_CONTACT_EMAIL` at them.
+
+Production transit encryption is **not** outstanding — see §4.6.
+
+### 4.6 Correction — production transit was never in the clear
+
+An earlier revision of this file recorded "customer emails cross the internet
+unencrypted" as a live production exposure. That was wrong, and the mistake is
+worth keeping visible because it nearly caused an outage.
+
+Production's `DATABASE_URL` and `REDIS_URL` resolve to **Coolify container
+hostnames** (`i4ix8ki1yyxyyr2g1ijo84fl:5432`,
+`fplf3d3ffte3qjsoqcezqb16:6379`) — single-label names on the private Docker
+network that cannot resolve on public DNS. That traffic never leaves the host.
+
+The cleartext public hop is on the **developer machine**, whose `.env` points
+at the server's published ports. Same credentials, entirely different threat
+model.
+
+The first version of the boot guard required `sslmode` unconditionally, which
+would have refused to start both `cited-web` and `cited-worker` on the next
+deploy — blocking every release to secure a hop that does not exist. The guard
+now exempts private hosts (loopback, RFC1918, `.internal`/`.local`, and
+single-label container names) and still refuses a publicly routable datastore
+without TLS. `lib/env.test.ts` pins both directions.
 
 ### 4.3 Webhook route gap — RESOLVED 2026-08-16
 

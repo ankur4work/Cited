@@ -94,49 +94,97 @@ const EnvObject = z.object({
     .transform((v) => v === 'true'),
 });
 
+/**
+ * Is this datastore reachable only from inside our own network?
+ *
+ * The distinction that matters for transit encryption is not "is TLS on" but
+ * "can anyone else see this traffic". A container talking to another container
+ * on a private Docker network has no hop an outsider can sit on, and demanding
+ * TLS there would be ceremony — it is also how the app is actually deployed,
+ * so getting this wrong refuses to boot production for no security gain.
+ *
+ * Treated as private:
+ *  - loopback
+ *  - RFC1918 ranges
+ *  - `.internal` / `.local` suffixes
+ *  - **single-label hostnames**, e.g. Coolify's `i4ix8ki1yyxyyr2g1ijo84fl`.
+ *    A name with no dot cannot resolve on public DNS, so by construction it is
+ *    a container alias on a private network.
+ *
+ * Anything else — a public hostname or a routable IP — is a real network hop
+ * and must be encrypted.
+ */
+export function isPrivateDatastoreHost(rawUrl: string): boolean {
+  let host: string;
+  try {
+    host = new URL(rawUrl).hostname;
+  } catch {
+    return false; // Unparseable: fail closed, demand TLS.
+  }
+  if (!host) return false;
+
+  const h = host.replace(/^\[/, '').replace(/\]$/, '').toLowerCase();
+
+  if (h === 'localhost' || h === '127.0.0.1' || h === '::1') return true;
+  if (h.endsWith('.internal') || h.endsWith('.local')) return true;
+  if (!h.includes('.') && !h.includes(':')) return true;
+
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
+  if (v4) {
+    const a = Number(v4[1]);
+    const b = Number(v4[2]);
+    if (a === 10) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 127) return true;
+  }
+
+  return false;
+}
+
 const EnvSchema = EnvObject
   /**
-   * Refuse to boot in production against an unencrypted datastore connection.
+   * Refuse to boot in production against an unencrypted datastore connection
+   * that crosses a network someone else can watch.
    *
    * Both stores hold customer personal data: Postgres has the encrypted order
    * emails and their lookup hashes, Redis has job payloads that carry a
    * plaintext address for the life of a compliance job. Encrypting a column at
-   * rest and then shipping it over a cleartext socket protects nothing, and
-   * "do you encrypt data in transit?" is a question Shopify asks directly.
+   * rest and then shipping it over a cleartext socket on the open internet
+   * protects nothing, and "do you encrypt data in transit?" is a question
+   * Shopify asks directly.
    *
    * Enforced here rather than left to deployment config because a connection
-   * string is edited under time pressure, and a missing `sslmode` is invisible
-   * — everything keeps working, just unencrypted. Failing the boot is the only
-   * feedback that arrives before the data does.
+   * string is edited under time pressure and a missing `sslmode` is invisible
+   * — everything keeps working, just unencrypted.
    *
-   * Development is exempt: the local docker stack is loopback-only.
+   * Exempt: non-production, and any datastore on a private network
+   * (`isPrivateDatastoreHost`). The deployed app reaches Postgres and Redis by
+   * Docker service name, so requiring TLS there would block every deploy while
+   * securing a hop that never leaves the host.
    */
   .superRefine((cfg, ctx) => {
     if (cfg.NODE_ENV !== 'production') return;
 
-    const pgTlsDisabled =
-      !/[?&]sslmode=/.test(cfg.DATABASE_URL) || /[?&]sslmode=disable/.test(cfg.DATABASE_URL);
-
-    if (pgTlsDisabled) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['DATABASE_URL'],
-        message:
-          'DATABASE_URL must set sslmode (e.g. ?sslmode=require) in production — customer data must not cross the network unencrypted',
-      });
+    if (!isPrivateDatastoreHost(cfg.DATABASE_URL)) {
+      const tlsOff =
+        !/[?&]sslmode=/.test(cfg.DATABASE_URL) || /[?&]sslmode=disable/.test(cfg.DATABASE_URL);
+      if (tlsOff) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['DATABASE_URL'],
+          message:
+            'DATABASE_URL points at a publicly routable host without sslmode — add ?sslmode=require, or move Postgres onto the private network',
+        });
+      }
     }
 
-    // `rediss://` is Redis over TLS. A loopback or unix-socket Redis is
-    // accepted because there is no network hop to intercept.
-    const redisIsLocal = /@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(cfg.REDIS_URL)
-      || /^redis:\/\/(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(cfg.REDIS_URL);
-
-    if (!cfg.REDIS_URL.startsWith('rediss://') && !redisIsLocal) {
+    if (!isPrivateDatastoreHost(cfg.REDIS_URL) && !cfg.REDIS_URL.startsWith('rediss://')) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['REDIS_URL'],
         message:
-          'REDIS_URL must use rediss:// (TLS) in production unless Redis is loopback-local — job payloads carry customer email addresses',
+          'REDIS_URL points at a publicly routable host without TLS — use rediss://, or move Redis onto the private network. Job payloads carry customer email addresses',
       });
     }
   });
