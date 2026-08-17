@@ -83,6 +83,11 @@ export default async function Home({
           </p>
           <a
             href={`/api/auth?shop=${encodeURIComponent(shop!)}`}
+            // Breaks out of the admin iframe on click. /api/auth also serves a
+            // JS breakout shim, but doing it here too means the escape happens
+            // in the initial navigation rather than one hop later — and it
+            // still works if scripts are blocked in the frame.
+            target="_top"
             style={{
               display: 'inline-block',
               padding: '8px 16px',
