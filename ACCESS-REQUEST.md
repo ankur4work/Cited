@@ -98,7 +98,9 @@ Everything below the line is now verification against a real dev store, not cons
 - [x] `SHOPIFY_SCOPES` set in the Coolify environment, including `write_product_reviews` (§6.3)
 - [x] Deployed — `cited-web` and `cited-worker` live at `https://cited.solnix.store`, migrations applied, worker consuming
 - [ ] Dev store created, `dev_store_url` set in `shopify.app.toml`, app installed on it
-- [ ] 🔴 **Protected customer data access approved** — blocks `shopify app deploy`, see §4.1 (answers drafted in §4.2)
+- [x] **Protected customer data access approved** — granted 2026-08-17, see §4.0
+- [x] **`shopify app deploy` run** — version released 2026-08-17; subscriptions and URLs registered (§4.0)
+- [ ] `SHOPIFY_APP_HANDLE=cited-reviews` set in the Coolify environment (§4.0)
 - [x] **Five missing webhook route handlers built** — including all three mandatory compliance topics, see §4.3
 - [x] Transit encryption enforced in code — production boot fails without TLS on both datastores (§4.4)
 - [x] Retention periods and audit logging implemented (§4.4)
@@ -114,7 +116,28 @@ Everything below the line is now verification against a real dev store, not cons
 - [ ] Retry/backoff demonstrable (kill the API mid-sync, confirm recovery)
 - [ ] Bulk limits respected: 20MB JSONL, batch 10,000 reviews, 250 IDs per bulk delete
 
-### 4.1 Blocker — protected customer data access (found 2026-08-14)
+### 4.0 DEPLOYED 2026-08-17 ✅
+
+`shopify app deploy` succeeded. A new app version is released, which means the
+metaobject `filter` key is accepted, all six webhook subscriptions are
+registered, and the `https://cited.solnix.store` URLs have reached the Partner
+Dashboard.
+
+Two things cleared along the way:
+
+- **Protected customer data access is GRANTED.** `shopify app info` now
+  reports the granted scopes as
+  `read_customers,read_metaobjects,read_orders,read_products,write_product_reviews`.
+  The blocker in §4.1 is resolved.
+- **The app handle changed to `cited-reviews`.** Handles are globally unique
+  across every Shopify app, and `cited` was already taken by someone else —
+  the deploy failed with `app_handle: App handle must be unique`. The handle
+  appears in merchant-facing URLs (`admin.shopify.com/store/:store/apps/:handle`
+  and the billing plan link), so `SHOPIFY_APP_HANDLE` must be set to
+  `cited-reviews` in the Coolify environment or `planSelectionUrl()` will
+  generate a 404.
+
+### 4.1 Blocker — protected customer data access (RESOLVED 2026-08-17)
 
 `shopify app deploy` reached the Partner Dashboard, built the extension and
 then **refused to create the app version**:

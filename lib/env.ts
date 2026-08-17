@@ -24,7 +24,7 @@ const EnvObject = z.object({
   // mark the metaobject projection SKIPPED. See PLAN.md §5.2.1.
   SHOPIFY_SCOPES_RESTRICTED: z.string().default('write_product_reviews'),
 
-  SHOPIFY_APP_HANDLE: z.string().min(1).default('cited'),
+  SHOPIFY_APP_HANDLE: z.string().min(1).default('cited-reviews'),
   SHOPIFY_FREE_PLAN_NAME: z.string().min(1).default('Free'),
 
   // ── Datastores ─────────────────────────────────────────────
@@ -159,7 +159,7 @@ const BUILD_STUB: Env = {
   SHOPIFY_APP_URL: 'https://build-stub.invalid',
   SHOPIFY_SCOPES: 'read_products',
   SHOPIFY_SCOPES_RESTRICTED: 'write_product_reviews',
-  SHOPIFY_APP_HANDLE: 'cited',
+  SHOPIFY_APP_HANDLE: 'cited-reviews',
   SHOPIFY_FREE_PLAN_NAME: 'Free',
   DATABASE_URL: 'postgresql://stub:stub@localhost:5432/stub',
   REDIS_URL: 'redis://localhost:6379',
