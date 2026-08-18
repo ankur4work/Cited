@@ -40,9 +40,15 @@ export async function enqueueInstallBackfill(input: {
     { storeId, shopDomain, origin: 'install', sinceDays: 90 },
     {
       jobId: `install:orders:${storeId}`,
-      // Products first: order→product matching needs the catalog present,
-      // and verified-buyer status depends on that match.
-      delay: 5_000,
+      // Products first: order→product matching needs the catalog present, and
+      // verified-buyer status depends on that match.
+      //
+      // The delay is a head start, NOT the mechanism — a product bulk export
+      // takes far longer than any delay worth waiting. Ordering is enforced in
+      // runBulkQuery, which blocks until the shop's single bulk slot is free.
+      // When this was 5s with no gate, the two jobs raced and the product
+      // ingest silently reported success having written nothing.
+      delay: 30_000,
     },
   );
 

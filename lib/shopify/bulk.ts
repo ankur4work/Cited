@@ -33,6 +33,26 @@ const CURRENT_QUERY = /* GraphQL */ `
   }
 `;
 
+/**
+ * Poll a SPECIFIC operation, by id.
+ *
+ * `currentBulkOperation` returns the shop's most recent operation, which is
+ * not necessarily ours — a shop may run only one bulk query at a time, and the
+ * install backfill starts two jobs. Polling the "current" one meant the
+ * product ingest watched the ORDERS operation, saw it COMPLETED with no
+ * download URL, and reported success having written nothing. The store had 17
+ * products and the app said 0.
+ */
+const BY_ID_QUERY = /* GraphQL */ `
+  query BulkOpById($id: ID!) {
+    node(id: $id) {
+      ... on BulkOperation {
+        id status url objectCount errorCode
+      }
+    }
+  }
+`;
+
 const CANCEL_MUTATION = /* GraphQL */ `
   mutation BulkCancel($id: ID!) {
     bulkOperationCancel(id: $id) {
@@ -58,6 +78,10 @@ export async function runBulkQuery<T>(
   query: string,
   onRecord: (record: T) => Promise<void> | void,
 ): Promise<{ objectCount: number }> {
+  // A shop runs at most ONE bulk query at a time. Starting ours while another
+  // is in flight either fails outright or silently supersedes it, so wait.
+  await waitForFreeSlot(client);
+
   const start = await client.graphql<{
     bulkOperationRunQuery: {
       bulkOperation: { id: string; status: BulkStatus } | null;
@@ -78,7 +102,7 @@ export async function runBulkQuery<T>(
   }
   logger.info({ shop: client.shopDomain, bulkId: op.id }, 'Bulk operation started');
 
-  const finished = await pollUntilTerminal(client);
+  const finished = await pollUntilTerminal(client, op.id);
   if (finished.status === 'CANCELED' || finished.status === 'EXPIRED' || finished.status === 'FAILED') {
     throw new BulkOperationError(
       `Bulk op ${finished.status}${finished.errorCode ? ` (${finished.errorCode})` : ''}`,
@@ -99,22 +123,64 @@ export async function runBulkQuery<T>(
   return { objectCount };
 }
 
-async function pollUntilTerminal(client: ShopifyClient): Promise<BulkOperation> {
+/**
+ * Wait until the shop has no bulk query in flight.
+ *
+ * Shopify permits one per shop. The install backfill queues a product ingest
+ * and an order ingest, the ingestion worker runs five jobs concurrently, and
+ * both processors call this file — so without a gate they race for the single
+ * slot on every fresh install.
+ *
+ * Bounded by the same timeout as polling: if a foreign operation never ends we
+ * fail loudly rather than blocking a worker slot forever.
+ */
+async function waitForFreeSlot(client: ShopifyClient): Promise<void> {
   const deadline = Date.now() + POLL_TIMEOUT_MS;
+  let waited = false;
+
   while (Date.now() < deadline) {
-    await sleep(POLL_INTERVAL_MS);
     const resp = await client.graphql<{ currentBulkOperation: BulkOperation | null }>(CURRENT_QUERY);
     const op = resp.data?.currentBulkOperation;
+    if (!op || (op.status !== 'CREATED' && op.status !== 'RUNNING')) {
+      if (waited) logger.info({ shop: client.shopDomain }, 'Bulk slot free — starting');
+      return;
+    }
+    if (!waited) {
+      waited = true;
+      logger.info(
+        { shop: client.shopDomain, blockedBy: op.id, status: op.status },
+        'Another bulk operation is running — waiting for the slot',
+      );
+    }
+    await sleep(POLL_INTERVAL_MS);
+  }
+
+  throw new BulkOperationError('Timed out waiting for a free bulk slot', 'FAILED');
+}
+
+/**
+ * Poll OUR operation until it reaches a terminal state.
+ *
+ * Keyed by id, never `currentBulkOperation`: a concurrent operation on the
+ * same shop would otherwise be mistaken for ours, and its "COMPLETED, no
+ * results" is indistinguishable from our own success. That is precisely how a
+ * product ingest reported completion after writing zero of 17 products.
+ */
+async function pollUntilTerminal(client: ShopifyClient, id: string): Promise<BulkOperation> {
+  const deadline = Date.now() + POLL_TIMEOUT_MS;
+
+  while (Date.now() < deadline) {
+    await sleep(POLL_INTERVAL_MS);
+    const resp = await client.graphql<{ node: BulkOperation | null }>(BY_ID_QUERY, { id });
+    const op = resp.data?.node;
     if (!op) continue;
     if (op.status === 'CREATED' || op.status === 'RUNNING') continue;
     return op;
   }
-  // Try to cancel before giving up.
-  const resp = await client.graphql<{ currentBulkOperation: BulkOperation | null }>(CURRENT_QUERY);
-  const op = resp.data?.currentBulkOperation;
-  if (op && (op.status === 'CREATED' || op.status === 'RUNNING')) {
-    await client.graphql(CANCEL_MUTATION, { id: op.id });
-  }
+
+  // Cancel OUR operation before giving up — cancelling whatever happens to be
+  // current could kill another job's work.
+  await client.graphql(CANCEL_MUTATION, { id }).catch(() => undefined);
   throw new BulkOperationError('Bulk op poll timed out', 'FAILED');
 }
 
