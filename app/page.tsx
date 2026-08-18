@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { isValidShopDomain } from '@/lib/shopify/validators';
+import { needsReauth } from '@/lib/shopify/access-token';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,6 +30,10 @@ export default async function Home({
           scope: true,
           reviewScopeGranted: true,
           onboardingComplete: true,
+          accessToken: true,
+          accessTokenExpiresAt: true,
+          refreshToken: true,
+          refreshTokenExpiresAt: true,
           _count: { select: { products: true, reviews: true } },
         },
       })
@@ -98,6 +103,40 @@ export default async function Home({
             }}
           >
             Install Cited
+          </a>
+        </section>
+      )}
+
+      {store && needsReauth(store) && (
+        <section
+          style={{
+            border: '1px solid #d97706',
+            borderRadius: 8,
+            padding: 20,
+            marginBottom: 24,
+            background: '#fffbeb',
+          }}
+        >
+          <h2 style={{ fontSize: '1rem', margin: '0 0 8px' }}>Reconnect required</h2>
+          <p style={{ margin: '0 0 16px', color: '#92400e' }}>
+            This store&apos;s Shopify credentials can no longer be used, so products,
+            orders and reviews are not syncing. Reconnecting takes one click and
+            no data is lost.
+          </p>
+          <a
+            href={`/api/auth?shop=${encodeURIComponent(store.shopDomain)}`}
+            // Same iframe breakout as the install button below.
+            target="_top"
+            style={{
+              display: 'inline-block',
+              padding: '8px 16px',
+              background: '#1a1a1a',
+              color: '#fff',
+              borderRadius: 6,
+              textDecoration: 'none',
+            }}
+          >
+            Reconnect Cited
           </a>
         </section>
       )}

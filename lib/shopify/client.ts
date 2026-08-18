@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import type { Store } from '@prisma/client';
 import { env } from '../env';
 import { logger } from '../logger';
-import { decrypt } from '../crypto';
+import { getAccessToken } from './access-token';
 
 export const ADMIN_API_VERSION = '2025-07';
 
@@ -114,14 +114,20 @@ function jitter(base: number): number {
 }
 
 export interface ShopifyClientOptions {
-  /** Override the decrypted token (useful for tests). */
+  /** Skip the database entirely and use this token (used by tests). */
   accessTokenOverride?: string;
   fetchImpl?: typeof fetch;
 }
 
 export class ShopifyClient {
   public readonly shopDomain: string;
-  private readonly accessToken: string;
+  private readonly storeId: string | null;
+  /**
+   * Cached for the life of this client. Tokens last 60 minutes, so one lookup
+   * covers all but the longest-running job, and `getAccessToken` re-checks
+   * freshness whenever we do go back to it.
+   */
+  private accessToken: string | null;
   /**
    * Readable so callers that must fetch a Shopify-issued URL *outside* the
    * GraphQL endpoint — the bulk-operation JSONL download — go through the same
@@ -130,21 +136,35 @@ export class ShopifyClient {
    */
   public readonly fetchImpl: typeof fetch;
 
-  constructor(store: Pick<Store, 'shopDomain' | 'accessToken'>, opts: ShopifyClientOptions = {}) {
+  /**
+   * Takes the store's ID rather than its token.
+   *
+   * Tokens now expire after 60 minutes, so a token captured at construction is
+   * a bug waiting for a slow job: a bulk product ingest can easily outlive one.
+   * Resolving through `getAccessToken` means the client always sends a live
+   * token and refreshes transparently when it doesn't.
+   */
+  constructor(store: Pick<Store, 'id' | 'shopDomain'>, opts: ShopifyClientOptions = {}) {
     this.shopDomain = store.shopDomain;
-
-    const token = opts.accessTokenOverride ?? (store.accessToken ? decrypt(store.accessToken) : null);
-    if (!token) {
-      // accessToken is nullable: a Store row exists before the token exchange
-      // completes and after a redact purge. Failing loudly here beats sending
-      // an unauthenticated request and debugging a 401 from the Admin API.
-      // Reuses ShopifyAuthError so existing callers, which already re-queue
-      // and wait for the next embedded-app open to trigger token exchange,
-      // handle a missing token exactly as they handle a stale one.
-      throw new ShopifyAuthError(store.shopDomain, 'no-access-token');
-    }
-    this.accessToken = token;
+    this.storeId = opts.accessTokenOverride ? null : store.id;
+    this.accessToken = opts.accessTokenOverride ?? null;
     this.fetchImpl = opts.fetchImpl ?? fetch;
+  }
+
+  /**
+   * The token to send. `force` bypasses both this cache and the stored expiry
+   * — used once after a 401/403, because Shopify's opinion of a token beats
+   * ours.
+   */
+  private async token(force = false): Promise<string> {
+    if (this.storeId === null) {
+      // accessTokenOverride path: nothing to refresh from.
+      if (!this.accessToken) throw new ShopifyAuthError(this.shopDomain, 'no-access-token');
+      return this.accessToken;
+    }
+    if (!force && this.accessToken) return this.accessToken;
+    this.accessToken = await getAccessToken(this.storeId, { force });
+    return this.accessToken;
   }
 
   private endpoint(): string {
@@ -157,6 +177,7 @@ export class ShopifyClient {
     signal?: AbortSignal,
   ): Promise<GraphQLResponse<T>> {
     let attempt = 0;
+    let refreshed = false;
     while (true) {
       const requestId = randomUUID();
       const start = Date.now();
@@ -164,7 +185,7 @@ export class ShopifyClient {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Shopify-Access-Token': this.accessToken,
+          'X-Shopify-Access-Token': await this.token(),
           'X-Request-ID': requestId,
           Accept: 'application/json',
         },
@@ -212,6 +233,22 @@ export class ShopifyClient {
           { shop: this.shopDomain, requestId, status: res.status, body: text.slice(0, 500) },
           'Shopify auth error — full response',
         );
+
+        // One forced refresh, then retry. Shopify can reject a token we still
+        // consider fresh — revoked, rotated elsewhere, or our clock is off —
+        // and in every one of those cases a new token fixes it. Guarded by a
+        // flag rather than the attempt counter so a genuinely dead credential
+        // fails on the second response instead of looping.
+        //
+        // ReauthRequiredError is deliberately NOT caught: it means refreshing
+        // is impossible, and it carries the reason the UI needs.
+        if (!refreshed && this.storeId !== null) {
+          refreshed = true;
+          logger.info({ shop: this.shopDomain, requestId }, 'Forcing token refresh after auth error');
+          await this.token(true);
+          continue;
+        }
+
         throw new ShopifyAuthError(this.shopDomain, requestId, text);
       }
 

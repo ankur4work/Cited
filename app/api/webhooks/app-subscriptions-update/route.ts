@@ -64,8 +64,8 @@ export async function POST(req: NextRequest) {
 
   try {
     const subscription = await fetchActiveSubscription({
+      id: store.id,
       shopDomain: store.shopDomain,
-      accessToken: store.accessToken,
     });
     const plan = planFromSubscription(subscription);
 

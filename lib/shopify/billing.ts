@@ -100,7 +100,7 @@ export interface ActiveSubscription {
  * failing open, so a Shopify outage can't hand out paid features.
  */
 export async function fetchActiveSubscription(
-  store: Pick<Store, 'shopDomain' | 'accessToken'>,
+  store: Pick<Store, 'id' | 'shopDomain'>,
 ): Promise<ActiveSubscription | null> {
   const client = new ShopifyClient(store);
   const resp = await client.graphql<ActiveSubscriptionResp>(ACTIVE_SUBSCRIPTION_QUERY);

@@ -1,6 +1,6 @@
 import { prisma } from '../prisma';
 import { logger } from '../logger';
-import { decrypt, encrypt } from '../crypto';
+import { encrypt } from '../crypto';
 import { enqueueSyndicationBackfill } from '@/jobs/enqueue';
 import type { Plan, Store } from '@prisma/client';
 
@@ -8,8 +8,12 @@ export interface StoreUpsertInput {
   shopDomain: string;
   accessToken: string;
   scope: string;
-  /** Seconds until the access token expires (null = non-expiring). */
-  expiresIn?: number | null;
+  /** Seconds until the access token expires. Always set — see IssuedToken. */
+  expiresIn: number;
+  /** Rotates on every refresh; the old value is dead once this is stored. */
+  refreshToken: string;
+  /** Seconds until the refresh token dies (~90 days). Null if unreported. */
+  refreshTokenExpiresIn?: number | null;
 }
 
 /**
@@ -86,10 +90,18 @@ async function syncReviewScopeFlag(input: {
   }
 }
 
+/**
+ * Absolute expiry from a `expires_in` duration.
+ *
+ * Stores the TRUE expiry, not a pre-buffered one. The safety margin belongs
+ * in the refresh decision (see REFRESH_MARGIN_MS in access-token.ts), because
+ * a column called `accessTokenExpiresAt` that silently holds a time a minute
+ * before the real one makes every later calculation wrong by an amount nobody
+ * can see.
+ */
 function expiresAt(expiresIn: number | null | undefined): Date | null {
   if (!expiresIn) return null;
-  // Subtract 60s buffer so we refresh before the token actually expires.
-  return new Date(Date.now() + (expiresIn - 60) * 1000);
+  return new Date(Date.now() + expiresIn * 1000);
 }
 
 /** Billing fields cleared on reinstall — kept as a named type for reuse. */
@@ -142,6 +154,8 @@ async function logReinstallBillingReset(
 export async function upsertStoreWithToken(input: StoreUpsertInput): Promise<Store> {
   const encrypted = encrypt(input.accessToken);
   const tokenExpiresAt = expiresAt(input.expiresIn);
+  const encryptedRefresh = encrypt(input.refreshToken);
+  const refreshExpiresAt = expiresAt(input.refreshTokenExpiresIn);
   const { patch: billingPatch, prior } = await reinstallBillingReset(input.shopDomain);
   // Reinstall: clear uninstalledAt AND scheduledRedactAt so in-flight 48h redact
   // is cancelled automatically. Matches the `app/uninstalled → app/installed
@@ -153,6 +167,8 @@ export async function upsertStoreWithToken(input: StoreUpsertInput): Promise<Sto
       shopDomain: input.shopDomain,
       accessToken: encrypted,
       accessTokenExpiresAt: tokenExpiresAt,
+      refreshToken: encryptedRefresh,
+      refreshTokenExpiresAt: refreshExpiresAt,
       scope: input.scope,
       plan: 'FREE' satisfies Plan,
       installedAt: new Date(),
@@ -160,6 +176,8 @@ export async function upsertStoreWithToken(input: StoreUpsertInput): Promise<Sto
     update: {
       accessToken: encrypted,
       accessTokenExpiresAt: tokenExpiresAt,
+      refreshToken: encryptedRefresh,
+      refreshTokenExpiresAt: refreshExpiresAt,
       scope: input.scope,
       uninstalledAt: null,
       scheduledRedactAt: null,
@@ -176,46 +194,19 @@ export async function upsertStoreWithToken(input: StoreUpsertInput): Promise<Sto
   return store;
 }
 
-export async function getStoreToken(shopDomain: string): Promise<string | null> {
-  const store = await prisma.store.findUnique({ where: { shopDomain } });
-  if (!store || store.uninstalledAt) return null;
-  // accessToken is nullable: a Store row can exist before the token exchange
-  // completes (and after a redact purge), so absence is a normal state, not
-  // a corrupt row. Callers treat null as "re-authenticate".
-  if (!store.accessToken) return null;
-  return decrypt(store.accessToken);
-}
-
-export async function refreshStoreToken(input: StoreUpsertInput): Promise<Store> {
-  const { patch: billingPatch, prior } = await reinstallBillingReset(input.shopDomain);
-  const store = await prisma.store.update({
-    where: { shopDomain: input.shopDomain },
-    data: {
-      accessToken: encrypt(input.accessToken),
-      accessTokenExpiresAt: expiresAt(input.expiresIn),
-      scope: input.scope,
-      uninstalledAt: null,
-      scheduledRedactAt: null,
-      installedAt: new Date(),
-      // Empty on a normal app open (store still installed); resets plan→FREE
-      // only when this call is a genuine reinstall. See reinstallBillingReset.
-      ...billingPatch,
-    },
-  });
-  if (prior) await logReinstallBillingReset(prior);
-  await syncReviewScopeFlag({
-    storeId: store.id,
-    shopDomain: store.shopDomain,
-    scope: input.scope,
-  });
-  return store;
-}
-
-/** Returns true if the store's access token is expired or expiring within 5 minutes. */
-export function isTokenExpired(store: { accessTokenExpiresAt: Date | null }): boolean {
-  if (!store.accessTokenExpiresAt) return false;
-  return store.accessTokenExpiresAt.getTime() < Date.now() + 5 * 60 * 1000;
-}
+/*
+ * getStoreToken(), refreshStoreToken() and isTokenExpired() used to live here.
+ *
+ * All three were uncalled, and all three had become wrong under expiring
+ * tokens: getStoreToken() returned the stored ciphertext's plaintext with no
+ * freshness check, and isTokenExpired() answered `false` for a null expiry —
+ * which is now the signature of a legacy token the Admin API refuses outright,
+ * i.e. the most expired state a store can be in.
+ *
+ * Token reads go through getAccessToken() in ./access-token, which refreshes;
+ * token writes go through upsertStoreWithToken() above, which handles reinstall
+ * and re-authorization alike.
+ */
 
 export async function markStoreUninstalled(shopDomain: string): Promise<void> {
   await prisma.store.updateMany({

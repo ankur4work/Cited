@@ -170,10 +170,18 @@ model Store {
 
   /// AES-256-GCM ciphertext (lib/crypto.ts). Never logged, never returned.
   accessToken String?
-  /// Shopify issues EXPIRING offline tokens to apps created after Apr 2026.
-  /// Null means non-expiring (legacy). Refreshed via token exchange.
+  /// When the access token dies — expiring offline tokens last 60 minutes.
+  /// Null here means a legacy NON-EXPIRING token, which the Admin API has
+  /// rejected outright since Dec 2025 ("Non-expiring access tokens are no
+  /// longer accepted"). Such a row cannot be refreshed, only re-authorized.
   accessTokenExpiresAt DateTime?
-  scope                String?
+  /// AES-256-GCM ciphertext of the `shprt_…` refresh token. At least as
+  /// sensitive as the access token: it mints new ones without the merchant.
+  refreshToken String?
+  /// Refresh tokens last 90 days. Past this the merchant must re-authorize;
+  /// there is no way back from an expired refresh token.
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
 
   /// True once Shopify grants `write_product_reviews`. Until then the
   /// metaobject projection is SKIPPED and we render from our own data.

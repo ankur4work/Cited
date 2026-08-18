@@ -60,11 +60,18 @@ export async function GET(req: NextRequest) {
 
   let store;
   try {
-    const { accessToken, scope, expiresIn } = await exchangeAuthorizationCode({ shop, code });
-    store = await upsertStoreWithToken({ shopDomain: shop, accessToken, scope, expiresIn });
+    const issued = await exchangeAuthorizationCode({ shop, code });
+    store = await upsertStoreWithToken({
+      shopDomain: shop,
+      accessToken: issued.accessToken,
+      scope: issued.scope,
+      expiresIn: issued.expiresIn,
+      refreshToken: issued.refreshToken,
+      refreshTokenExpiresIn: issued.refreshTokenExpiresIn,
+    });
 
     logger.info(
-      { shop, scope, expiring: expiresIn !== null, storeId: store.id },
+      { shop, scope: issued.scope, expiresIn: issued.expiresIn, storeId: store.id },
       'OAuth complete — store installed',
     );
   } catch (err) {
