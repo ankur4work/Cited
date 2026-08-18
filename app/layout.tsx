@@ -1,5 +1,8 @@
 import type { Metadata } from 'next';
 import { env } from '@/lib/env';
+import '@shopify/polaris/build/esm/styles.css';
+import { PolarisProvider } from './_components/polaris-provider';
+import { NavMenu } from './_components/nav-menu';
 
 export const metadata: Metadata = {
   title: 'Cited — Product Reviews & AI Visibility',
@@ -20,7 +23,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* eslint-disable-next-line @next/next/no-sync-scripts */}
         <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js" />
       </head>
-      <body>{children}</body>
+      <body>
+        <PolarisProvider>
+          <NavMenu />
+          {children}
+        </PolarisProvider>
+      </body>
     </html>
   );
 }

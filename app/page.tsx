@@ -1,184 +1,43 @@
-import { prisma } from '@/lib/prisma';
-import { isValidShopDomain } from '@/lib/shopify/validators';
-import { needsReauth } from '@/lib/shopify/access-token';
+import { resolveEmbeddedSession } from '@/lib/shopify/embedded-session';
+import { getOverview, getRecentReviews, getSetupSteps } from '@/lib/dashboard';
+import { SessionBootstrap } from './_components/session-bootstrap';
+import { OverviewView } from './_components/overview-view';
+import { OpenFromAdmin } from './_components/open-from-admin';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * Embedded app entry point.
+ * The embedded app's home.
  *
- * Deliberately a server component with no client JS beyond App Bridge: at
- * this stage it reports real install state rather than rendering a mock
- * dashboard. Polaris UI lands once there is data worth showing.
+ * Authentication happens before anything renders: `resolveEmbeddedSession`
+ * exchanges the App Bridge session token when the store has no usable access
+ * token, so a merchant never sees Shopify's authorize screen. Rendering is
+ * delegated to a client view because Polaris cannot run in a server component.
  */
 export default async function Home({
   searchParams,
 }: {
-  searchParams: { shop?: string; host?: string };
+  searchParams: { shop?: string; host?: string; id_token?: string };
 }) {
-  const shop = searchParams.shop;
-  const valid = isValidShopDomain(shop);
+  const session = await resolveEmbeddedSession({
+    shop: searchParams.shop,
+    idToken: searchParams.id_token,
+  });
 
-  const store = valid
-    ? await prisma.store.findUnique({
-        where: { shopDomain: shop! },
-        select: {
-          shopDomain: true,
-          plan: true,
-          installedAt: true,
-          uninstalledAt: true,
-          scope: true,
-          reviewScopeGranted: true,
-          onboardingComplete: true,
-          accessToken: true,
-          accessTokenExpiresAt: true,
-          refreshToken: true,
-          refreshTokenExpiresAt: true,
-          _count: { select: { products: true, reviews: true } },
-        },
-      })
-    : null;
+  if (session.state === 'no-shop') return <OpenFromAdmin />;
+  if (session.state === 'needs-token') return <SessionBootstrap shop={session.shop} />;
+
+  const store = session.store;
+  const overview = await getOverview(store.id);
+  const recent = await getRecentReviews(store.id);
 
   return (
-    <main
-      style={{
-        fontFamily:
-          '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-        padding: '32px',
-        maxWidth: '760px',
-        margin: '0 auto',
-        color: '#1a1a1a',
-        lineHeight: 1.6,
-      }}
-    >
-      <h1 style={{ fontSize: '1.5rem', margin: '0 0 4px' }}>Cited</h1>
-      <p style={{ color: '#6b7280', margin: '0 0 28px' }}>
-        Product Reviews &amp; AI Visibility
-      </p>
-
-      {!valid && (
-        <section
-          style={{
-            border: '1px solid #e5e7eb',
-            borderRadius: 8,
-            padding: 20,
-            background: '#fafafa',
-          }}
-        >
-          <h2 style={{ fontSize: '1rem', margin: '0 0 8px' }}>No shop context</h2>
-          <p style={{ margin: 0, color: '#6b7280' }}>
-            Open this app from your Shopify admin, or start an install at{' '}
-            <code>/api/auth?shop=your-store.myshopify.com</code>.
-          </p>
-        </section>
-      )}
-
-      {valid && !store && (
-        <section
-          style={{
-            border: '1px solid #e5e7eb',
-            borderRadius: 8,
-            padding: 20,
-            background: '#fafafa',
-          }}
-        >
-          <h2 style={{ fontSize: '1rem', margin: '0 0 8px' }}>Not installed yet</h2>
-          <p style={{ margin: '0 0 16px', color: '#6b7280' }}>
-            {shop} has no Cited installation on record.
-          </p>
-          <a
-            href={`/api/auth?shop=${encodeURIComponent(shop!)}`}
-            // Breaks out of the admin iframe on click. /api/auth also serves a
-            // JS breakout shim, but doing it here too means the escape happens
-            // in the initial navigation rather than one hop later — and it
-            // still works if scripts are blocked in the frame.
-            target="_top"
-            style={{
-              display: 'inline-block',
-              padding: '8px 16px',
-              background: '#1a1a1a',
-              color: '#fff',
-              borderRadius: 6,
-              textDecoration: 'none',
-            }}
-          >
-            Install Cited
-          </a>
-        </section>
-      )}
-
-      {store && needsReauth(store) && (
-        <section
-          style={{
-            border: '1px solid #d97706',
-            borderRadius: 8,
-            padding: 20,
-            marginBottom: 24,
-            background: '#fffbeb',
-          }}
-        >
-          <h2 style={{ fontSize: '1rem', margin: '0 0 8px' }}>Reconnect required</h2>
-          <p style={{ margin: '0 0 16px', color: '#92400e' }}>
-            This store&apos;s Shopify credentials can no longer be used, so products,
-            orders and reviews are not syncing. Reconnecting takes one click and
-            no data is lost.
-          </p>
-          <a
-            href={`/api/auth?shop=${encodeURIComponent(store.shopDomain)}`}
-            // Same iframe breakout as the install button below.
-            target="_top"
-            style={{
-              display: 'inline-block',
-              padding: '8px 16px',
-              background: '#1a1a1a',
-              color: '#fff',
-              borderRadius: 6,
-              textDecoration: 'none',
-            }}
-          >
-            Reconnect Cited
-          </a>
-        </section>
-      )}
-
-      {store && (
-        <section style={{ display: 'grid', gap: 12 }}>
-          <Row label="Shop" value={store.shopDomain} />
-          <Row label="Plan" value={store.plan} />
-          <Row
-            label="Status"
-            value={store.uninstalledAt ? 'Uninstalled' : 'Installed'}
-          />
-          <Row label="Products synced" value={String(store._count.products)} />
-          <Row label="Reviews" value={String(store._count.reviews)} />
-          <Row
-            label="Review metaobject access"
-            value={
-              store.reviewScopeGranted
-                ? 'Granted — syndicating to Shopify'
-                : 'Pending Shopify approval — rendering from Cited only'
-            }
-          />
-          <Row label="Scopes" value={store.scope ?? '—'} />
-        </section>
-      )}
-    </main>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div
-      style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        gap: 16,
-        padding: '10px 0',
-        borderBottom: '1px solid #e5e7eb',
-      }}
-    >
-      <span style={{ color: '#6b7280' }}>{label}</span>
-      <span style={{ fontWeight: 500, textAlign: 'right' }}>{value}</span>
-    </div>
+    <OverviewView
+      shopDomain={store.shopDomain}
+      reviewScopeGranted={store.reviewScopeGranted}
+      overview={overview}
+      steps={getSetupSteps(store, overview)}
+      recent={recent}
+    />
   );
 }
