@@ -17,7 +17,14 @@ export default defineConfig({
     // Postgres, Redis and Shopify token; picking those up here would make
     // `pnpm test` fail on any machine that hasn't provisioned them.
     include: ['**/*.test.ts'],
-    exclude: ['node_modules/**', '.next/**', 'scripts/**'],
+    // Leading `**/` matters: these patterns are matched against the whole
+    // path, so a bare `node_modules/**` only catches the one at the root.
+    // Git worktrees live at `.claude/worktrees/<branch>/`, INSIDE the repo,
+    // each with its own installed dependencies — and several published
+    // packages ship their `*.test.ts` sources. Without the recursive form
+    // `vitest run` collects those, and dozens of vendored files fail on
+    // `describe is not defined` because they expect their own runner.
+    exclude: ['**/node_modules/**', '**/.next/**', 'scripts/**', '.claude/**'],
 
     /**
      * Synthetic values so `lib/env.ts` validates.
