@@ -93,9 +93,18 @@ ENV SHOPIFY_API_KEY=$SHOPIFY_API_KEY \
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN pnpm prisma generate
-# Bump Node heap — Next's build (especially trace collection) spikes memory
-# and Alpine's default ~1.7GB V8 limit was triggering OOM kills on our host.
-ENV NODE_OPTIONS=--max-old-space-size=4096
+# Node heap ceiling for the build.
+#
+# Alpine's default ~1.7GB V8 limit was too LOW — trace collection blew past it
+# — but 4096 was too HIGH: this host runs every app the owner owns, and a build
+# permitted to grow to 4GB simply outgrows what the machine can back, so the
+# kernel kills the build container. That death is silent: exit 255, no compiler
+# error, nothing in the log after the last install line.
+#
+# 3072 is the compromise. V8 collects harder as it approaches the ceiling
+# instead of expanding into memory that isn't there. A build that genuinely
+# needs more will now fail with a legible JS heap error rather than vanishing.
+ENV NODE_OPTIONS=--max-old-space-size=3072
 RUN pnpm build
 
 # ---- runtime ----
