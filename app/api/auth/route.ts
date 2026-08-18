@@ -15,12 +15,24 @@ export const dynamic = 'force-dynamic';
  * CSRF defence, so a replayed callback cannot be accepted even from the
  * same browser.
  *
- * NOTE ON SCOPES: we request env.SHOPIFY_SCOPES only. `write_product_reviews`
- * is a RESTRICTED scope tied to the standard `product_review` metaobject and
- * is granted solely to Shopify-approved product review apps. Requesting it
- * before approval makes the install fail outright, so it is held back and
- * added via fullScopes() once Store.reviewScopeGranted flips. See PLAN.md
- * §5.2.1.
+ * NOTE ON SCOPES: we request env.SHOPIFY_SCOPES, which INCLUDES the restricted
+ * `write_product_reviews`. That scope is tied to the standard `product_review`
+ * metaobject and is granted only to Shopify-approved product review apps —
+ * requesting it where the grant does not apply fails the install outright, so
+ * today this installs only on the dev test store covered by our test access
+ * (see PLAN.md §5.2.1 for the approval path).
+ *
+ * Asking for it up front is deliberate, not an oversight. The scope string
+ * here must match `access_scopes.scopes` in shopify.app.toml and APP_SCOPES in
+ * lib/shopify/app-identity.ts — the health check compares all three and fails
+ * the deploy on a mismatch — so a two-phase request would have to disagree
+ * with the manifest by design.
+ *
+ * Nothing is gated on the authorize request. Whether a shop may write
+ * metaobjects is decided downstream from the scope string the token exchange
+ * actually returns: syncReviewScopeFlag() in lib/shopify/store.ts sets
+ * Store.reviewScopeGranted from reality on install and on every app open, and
+ * the syndication jobs mark their work SKIPPED while it is false.
  */
 export async function GET(req: NextRequest) {
   const shopParam = req.nextUrl.searchParams.get('shop');

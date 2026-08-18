@@ -16,13 +16,11 @@ const EnvObject = z.object({
   SHOPIFY_API_KEY: z.string().min(1, 'SHOPIFY_API_KEY is required'),
   SHOPIFY_API_SECRET: z.string().min(1, 'SHOPIFY_API_SECRET is required'),
   SHOPIFY_APP_URL: z.string().url('SHOPIFY_APP_URL must be a valid URL'),
+  // Carries the restricted `write_product_reviews` too — it is requested in
+  // the one authorize call, not held back for a second grant. Must match
+  // APP_SCOPES and shopify.app.toml; the health check fails the deploy if the
+  // three disagree. See app/api/auth/route.ts for why it is not staged.
   SHOPIFY_SCOPES: z.string().min(1, 'SHOPIFY_SCOPES is required'),
-
-  // The `product_review` standard metaobject is a RESTRICTED definition.
-  // `write_product_reviews` is granted only after Shopify approves the app
-  // as a product review app. Until then we render from our own data and
-  // mark the metaobject projection SKIPPED. See PLAN.md §5.2.1.
-  SHOPIFY_SCOPES_RESTRICTED: z.string().default('write_product_reviews'),
 
   SHOPIFY_APP_HANDLE: z.string().min(1).default('cited-reviews'),
   SHOPIFY_FREE_PLAN_NAME: z.string().min(1).default('Free'),
@@ -206,7 +204,6 @@ const BUILD_STUB: Env = {
   SHOPIFY_API_SECRET: 'build-time-stub',
   SHOPIFY_APP_URL: 'https://build-stub.invalid',
   SHOPIFY_SCOPES: 'read_products',
-  SHOPIFY_SCOPES_RESTRICTED: 'write_product_reviews',
   SHOPIFY_APP_HANDLE: 'cited-reviews',
   SHOPIFY_FREE_PLAN_NAME: 'Free',
   DATABASE_URL: 'postgresql://stub:stub@localhost:5432/stub',
@@ -270,8 +267,3 @@ function loadEnv(): Env {
 }
 
 export const env: Env = loadEnv();
-
-/** Full scope string to request once Shopify grants review-app access. */
-export function fullScopes(): string {
-  return [env.SHOPIFY_SCOPES, env.SHOPIFY_SCOPES_RESTRICTED].filter(Boolean).join(',');
-}
