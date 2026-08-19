@@ -3,6 +3,7 @@ import { getReviews, type ReviewStatusFilter } from '@/lib/dashboard';
 import { SessionBootstrap } from '../_components/session-bootstrap';
 import { ReviewsView } from '../_components/reviews-view';
 import { SessionRecovery } from '../_components/session-recovery';
+import { ScopeUpgrade } from '../_components/scope-upgrade';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,6 +21,8 @@ export default async function ReviewsPage({
 
   if (session.state === 'no-shop') return <SessionRecovery title="Reviews" />;
   if (session.state === 'needs-token') return <SessionBootstrap shop={session.shop} />;
+  if (session.state === 'needs-scopes')
+    return <ScopeUpgrade shop={session.shop} missing={session.missing} />;
 
   const filter = VALID.includes(searchParams.status as ReviewStatusFilter)
     ? (searchParams.status as ReviewStatusFilter)

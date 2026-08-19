@@ -43,6 +43,38 @@ export const APP_HOST = 'cited.solnix.store';
 export const APP_SCOPES =
   'write_products,read_orders,read_customers,read_metaobjects,write_product_reviews';
 
+/**
+ * Scopes this app needs that a token does not carry.
+ *
+ * Adding a scope to the manifest does NOT widen a token that already exists,
+ * and refreshing mints a replacement with the same grant — so without this
+ * check an app can request a permission, deploy cleanly, and go on being
+ * denied forever. That is exactly what happened to `write_products`: the
+ * rating metafields failed on every write while every deploy reported success.
+ *
+ * `write_x` satisfies a requirement for `read_x`, which matters because
+ * Shopify records the granted scope as whichever form was requested — treating
+ * them as unrelated strings would report a permanent shortfall that no grant
+ * could ever clear, and send merchants round the authorize screen forever.
+ */
+export function missingScopes(granted: string | null | undefined): string[] {
+  const held = new Set(
+    (granted ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
+
+  return APP_SCOPES.split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .filter((required) => {
+      if (held.has(required)) return false;
+      if (required.startsWith('read_') && held.has(`write_${required.slice(5)}`)) return false;
+      return true;
+    });
+}
+
 /** Normalize a comma-separated scope string for order-insensitive comparison. */
 function normalizeScopes(raw: string): string {
   return raw

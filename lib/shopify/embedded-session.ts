@@ -5,6 +5,7 @@ import { needsReauth } from './access-token';
 import { exchangeOfflineAccessToken } from './token-exchange';
 import { upsertStoreWithToken } from './store';
 import { verifySessionToken, shopFromDest } from './session-token';
+import { missingScopes } from './app-identity';
 import { enqueueInstallBackfill } from '@/jobs/enqueue';
 
 /**
@@ -30,7 +31,14 @@ export type SessionResult =
    * stored token. The client retries with an App Bridge token; only if that
    * cannot happen does the legacy install link get shown.
    */
-  | { state: 'needs-token'; shop: string };
+  | { state: 'needs-token'; shop: string }
+  /**
+   * The token works but was issued before the app asked for a scope it now
+   * needs. Only the merchant can widen it, and only through Shopify's
+   * authorize screen — so this is the one case where showing that screen is
+   * correct rather than the bug it usually indicates.
+   */
+  | { state: 'needs-scopes'; shop: string; missing: string[] };
 
 export async function resolveEmbeddedSession(input: {
   shop?: string | null;
@@ -51,7 +59,16 @@ export async function resolveEmbeddedSession(input: {
 
       if (!existing || needsReauth(existing)) {
         const store = await exchangeAndPersist(shop!, input.idToken, existing);
-        return { state: 'ready', store };
+        return scopeGate(store);
+      }
+
+      // A shortfall is worth one exchange before bothering the merchant: if
+      // they granted the scope elsewhere, the exchange picks it up silently
+      // and they never see a screen. Only a token that comes back still short
+      // means consent is genuinely outstanding.
+      if (missingScopes(existing.scope).length > 0) {
+        const store = await exchangeAndPersist(shop!, input.idToken, existing);
+        return scopeGate(store);
       }
 
       return { state: 'ready', store: existing };
@@ -65,9 +82,21 @@ export async function resolveEmbeddedSession(input: {
   if (!shop) return { state: 'no-shop' };
 
   const store = await prisma.store.findUnique({ where: { shopDomain: shop } });
-  if (store && !needsReauth(store)) return { state: 'ready', store };
+  if (store && !needsReauth(store)) return scopeGate(store);
 
   return { state: 'needs-token', shop };
+}
+
+/** Ready, unless the token is short of a scope the app now requires. */
+function scopeGate(store: Store): SessionResult {
+  const missing = missingScopes(store.scope);
+  if (missing.length === 0) return { state: 'ready', store };
+
+  logger.warn(
+    { shop: store.shopDomain, missing },
+    'Token is missing required scopes — merchant must re-grant',
+  );
+  return { state: 'needs-scopes', shop: store.shopDomain, missing };
 }
 
 /**

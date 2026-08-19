@@ -4,6 +4,7 @@ import { checkThemeBlock } from '@/lib/theme-block';
 import { SessionBootstrap } from './_components/session-bootstrap';
 import { OverviewView } from './_components/overview-view';
 import { SessionRecovery } from './_components/session-recovery';
+import { ScopeUpgrade } from './_components/scope-upgrade';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,6 +28,8 @@ export default async function Home({
 
   if (session.state === 'no-shop') return <SessionRecovery />;
   if (session.state === 'needs-token') return <SessionBootstrap shop={session.shop} />;
+  if (session.state === 'needs-scopes')
+    return <ScopeUpgrade shop={session.shop} missing={session.missing} />;
 
   const store = session.store;
   const overview = await getOverview(store.id);
