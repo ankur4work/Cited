@@ -1,5 +1,6 @@
 import { resolveEmbeddedSession } from '@/lib/shopify/embedded-session';
 import { getOverview, getRecentReviews, getSetupSteps } from '@/lib/dashboard';
+import { checkThemeBlock } from '@/lib/theme-block';
 import { SessionBootstrap } from './_components/session-bootstrap';
 import { OverviewView } from './_components/overview-view';
 import { OpenFromAdmin } from './_components/open-from-admin';
@@ -29,14 +30,20 @@ export default async function Home({
 
   const store = session.store;
   const overview = await getOverview(store.id);
-  const recent = await getRecentReviews(store.id);
+
+  // Runs alongside the review query: the theme check is an outbound request to
+  // the storefront, and serialising it would add its latency to every load.
+  const [recent, themeBlock] = await Promise.all([
+    getRecentReviews(store.id),
+    checkThemeBlock(store.id, store.shopDomain),
+  ]);
 
   return (
     <OverviewView
       shopDomain={store.shopDomain}
       reviewScopeGranted={store.reviewScopeGranted}
       overview={overview}
-      steps={getSetupSteps(store, overview)}
+      steps={getSetupSteps(store, overview, themeBlock)}
       recent={recent}
     />
   );

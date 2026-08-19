@@ -1,5 +1,6 @@
 import { prisma } from './prisma';
 import type { Store } from '@prisma/client';
+import { themeEditorDeepLink, type ThemeBlockStatus } from './theme-block';
 
 /**
  * Read models for the merchant-facing pages.
@@ -64,6 +65,8 @@ export interface SetupStep {
   title: string;
   description: string;
   done: boolean;
+  /** Optional call to action — an absolute admin URL, opened at top level. */
+  action?: { label: string; url: string };
 }
 
 /**
@@ -73,7 +76,11 @@ export interface SetupStep {
  * cannot claim a store is set up when it isn't — the failure mode that made
  * the previous screen say "Installed" beside a store it could not read.
  */
-export function getSetupSteps(store: Store, overview: DashboardOverview): SetupStep[] {
+export function getSetupSteps(
+  store: Store,
+  overview: DashboardOverview,
+  themeBlock: ThemeBlockStatus = 'unknown',
+): SetupStep[] {
   return [
     {
       key: 'connect',
@@ -98,6 +105,21 @@ export function getSetupSteps(store: Store, overview: DashboardOverview): SetupS
           ? `${overview.reviewsTotal.toLocaleString()} reviews collected.`
           : 'Import existing reviews, or let review requests go out after fulfilment.',
       done: overview.reviewsTotal > 0,
+    },
+    {
+      key: 'theme',
+      title: 'Show reviews on your storefront',
+      description:
+        themeBlock === 'installed'
+          ? 'The Cited Reviews block is live on your product pages, rendered server-side in Shopify’s own HTML.'
+          : themeBlock === 'missing'
+            ? 'Your product pages don’t render the block yet, so shoppers can’t see reviews. This takes one click in the theme editor.'
+            : 'Add the Cited Reviews block to your product template. (Your storefront is password protected, so this can’t be verified automatically.)',
+      done: themeBlock === 'installed',
+      action:
+        themeBlock === 'installed'
+          ? undefined
+          : { label: 'Add block to theme', url: themeEditorDeepLink(store.shopDomain) },
     },
     {
       key: 'syndicate',

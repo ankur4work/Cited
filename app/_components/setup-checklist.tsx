@@ -1,4 +1,13 @@
-import { BlockStack, Box, Card, Icon, InlineStack, ProgressBar, Text } from '@shopify/polaris';
+import {
+  BlockStack,
+  Box,
+  Button,
+  Card,
+  Icon,
+  InlineStack,
+  ProgressBar,
+  Text,
+} from '@shopify/polaris';
 import { CheckCircleIcon, CircleChevronRightIcon } from '@shopify/polaris-icons';
 import type { SetupStep } from '@/lib/dashboard';
 
@@ -31,13 +40,27 @@ export function SetupChecklist({ steps }: { steps: SetupStep[] }) {
                   tone={step.done ? 'success' : 'subdued'}
                 />
               </Box>
-              <BlockStack gap="050">
-                <Text as="h3" variant="bodyMd" fontWeight="medium">
-                  {step.title}
-                </Text>
-                <Text as="p" variant="bodySm" tone="subdued">
-                  {step.description}
-                </Text>
+              <BlockStack gap="150">
+                <BlockStack gap="050">
+                  <Text as="h3" variant="bodyMd" fontWeight="medium">
+                    {step.title}
+                  </Text>
+                  <Text as="p" variant="bodySm" tone="subdued">
+                    {step.description}
+                  </Text>
+                </BlockStack>
+                {step.action && (
+                  <div>
+                    {/*
+                      target="_top" is required, not cosmetic: this link leaves
+                      our iframe for the theme editor, and without it the editor
+                      would try to render inside the app's frame and be refused.
+                    */}
+                    <Button url={step.action.url} target="_top" size="slim">
+                      {step.action.label}
+                    </Button>
+                  </div>
+                )}
               </BlockStack>
             </InlineStack>
           ))}
