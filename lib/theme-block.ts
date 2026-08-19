@@ -22,16 +22,34 @@ export const THEME_EXTENSION_UUID = '6cea37c8-6927-f5f3-2a46-b9a5792e946fa85d53f
 export const REVIEW_BLOCK_HANDLE = 'reviews';
 
 /**
+ * Where in the product template the editor should drop the block.
+ *
+ * `mainSection` puts reviews inside the theme's own product section, which is
+ * where they belong — but it only works if that section declares support for
+ * app blocks (`{"type": "@app"}` in its schema). Plenty of themes, and most
+ * custom ones, do not. When the section refuses, the editor adds nothing and
+ * shows "There is a problem with the app block. Contact the app developer.",
+ * which reads like our bug and isn't.
+ *
+ * `newAppsSection` sidesteps that by creating a section of its own. Placement
+ * is less precise — it lands after the product section rather than inside it,
+ * and the merchant drags it where they want — but it does not depend on the
+ * theme cooperating.
+ */
+export type ThemeEditorTarget = 'mainSection' | 'newAppsSection';
+
+/**
  * Deep link that opens the theme editor on the product template with our block
  * ready to place.
  *
- * `template=product` picks the product template, `addAppBlockId` preselects the
- * block, and `target=mainSection` drops it into the main product section rather
- * than a sidebar. If the theme editor cannot resolve the block it still opens
- * the right template, so the worst case is the merchant adding it by hand
- * instead of a dead end.
+ * `template=product` picks the product template and `addAppBlockId` preselects
+ * the block. If the editor cannot place it, it still opens the right template,
+ * so the worst case is the merchant adding it by hand instead of a dead end.
  */
-export function themeEditorDeepLink(shopDomain: string): string {
+export function themeEditorDeepLink(
+  shopDomain: string,
+  target: ThemeEditorTarget = 'mainSection',
+): string {
   // Built by hand rather than with URLSearchParams, which percent-encodes the
   // separator in `{uuid}/{handle}` to %2F. Shopify's editor expects a literal
   // slash there; encoded, it fails to resolve the block and the merchant lands
@@ -43,7 +61,7 @@ export function themeEditorDeepLink(shopDomain: string): string {
     `https://${shopDomain}/admin/themes/current/editor` +
     `?template=product` +
     `&addAppBlockId=${THEME_EXTENSION_UUID}/${REVIEW_BLOCK_HANDLE}` +
-    `&target=mainSection`
+    `&target=${target}`
   );
 }
 

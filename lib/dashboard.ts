@@ -67,6 +67,10 @@ export interface SetupStep {
   done: boolean;
   /** Optional call to action — an absolute admin URL, opened at top level. */
   action?: { label: string; url: string };
+  /** Second route to the same outcome, for when the first one can't work. */
+  altAction?: { label: string; url: string };
+  /** Shown under the buttons: what to do if neither link does the job. */
+  hint?: string;
 }
 
 /**
@@ -120,6 +124,21 @@ export function getSetupSteps(
         themeBlock === 'installed'
           ? undefined
           : { label: 'Add block to theme', url: themeEditorDeepLink(store.shopDomain) },
+      // Two links rather than one because the first can fail for a reason that
+      // has nothing to do with this app: a theme whose product section doesn't
+      // accept app blocks refuses the placement and blames the developer. The
+      // second link asks for a section of its own, which no theme can refuse.
+      altAction:
+        themeBlock === 'installed'
+          ? undefined
+          : {
+              label: 'Add as its own section',
+              url: themeEditorDeepLink(store.shopDomain, 'newAppsSection'),
+            },
+      hint:
+        themeBlock === 'installed'
+          ? undefined
+          : 'If neither link places it, add it by hand: Theme editor → Product template → Add block → Apps → Cited Reviews.',
     },
     {
       key: 'syndicate',

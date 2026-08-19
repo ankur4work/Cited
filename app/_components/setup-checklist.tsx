@@ -49,17 +49,29 @@ export function SetupChecklist({ steps }: { steps: SetupStep[] }) {
                     {step.description}
                   </Text>
                 </BlockStack>
-                {step.action && (
-                  <div>
+                {(step.action || step.altAction) && (
+                  <InlineStack gap="200" blockAlign="center">
                     {/*
-                      target="_top" is required, not cosmetic: this link leaves
+                      target="_top" is required, not cosmetic: these links leave
                       our iframe for the theme editor, and without it the editor
                       would try to render inside the app's frame and be refused.
                     */}
-                    <Button url={step.action.url} target="_top" size="slim">
-                      {step.action.label}
-                    </Button>
-                  </div>
+                    {step.action && (
+                      <Button url={step.action.url} target="_top" size="slim">
+                        {step.action.label}
+                      </Button>
+                    )}
+                    {step.altAction && (
+                      <Button url={step.altAction.url} target="_top" size="slim" variant="plain">
+                        {step.altAction.label}
+                      </Button>
+                    )}
+                  </InlineStack>
+                )}
+                {step.hint && (
+                  <Text as="p" variant="bodySm" tone="subdued">
+                    {step.hint}
+                  </Text>
                 )}
               </BlockStack>
             </InlineStack>
