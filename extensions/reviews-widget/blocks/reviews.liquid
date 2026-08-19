@@ -126,10 +126,8 @@
           if review.rating != blank and review.rating.value != blank
             assign r_rating = review.rating.value.rating | times: 1.0
           endif
-          {%- comment -%}
-            `author` on the standard definition is a customer reference, not a
-            name. The display name lives in `author_display_name`.
-          {%- endcomment -%}
+          # `author` on the standard definition is a customer reference, not a
+          # name. The display name lives in `author_display_name`.
           assign r_author = review.author_display_name | default: block.settings.anonymous_label
           assign r_verified = false
           if review.app_verification_status == 'verified_buyer'
