@@ -27,8 +27,7 @@ datasource db {
 
 enum Plan {
   FREE
-  CONVERT // $19 — conversion layer
-  INTEL // $49 — intelligence & AEO layer
+  PRO // $29 — everything beyond the free tier
 }
 
 enum ReviewStatus {

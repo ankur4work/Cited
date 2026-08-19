@@ -161,22 +161,20 @@ export function planFromSubscription(sub: ActiveSubscription | null): Plan {
 
   if (name === env.SHOPIFY_FREE_PLAN_NAME.trim().toLowerCase()) return 'FREE';
 
-  // Cited has two paid tiers, so a single "not free → paid" test is no longer
-  // enough. Match the invoice name, which the dashboard marks
-  // "Can't be changed later" and is therefore a stable identifier.
-  if (name.includes('intel')) return 'INTEL';
-  if (name.includes('convert')) return 'CONVERT';
+  // Match the invoice name, which the dashboard marks "Can't be changed later"
+  // and is therefore a stable identifier.
+  if (name.includes('pro')) return 'PRO';
 
-  // Unknown paid plan name — the dashboard was renamed without a code change.
-  // Fall back to the LOWEST paid tier rather than the highest: a merchant
-  // briefly missing a feature files a ticket we can fix, whereas silently
-  // granting $49 features to a $19 subscriber leaks margin and is invisible.
+  // Unknown plan name — the dashboard was renamed without a code change. With
+  // a single paid tier there is no lower rung to fall back to, and the store
+  // does hold an active non-free subscription, so treating it as PRO is the
+  // only reading that doesn't bill a merchant for something we then withhold.
   // Logged loudly so the mismatch surfaces instead of persisting.
   logger.warn(
     { subscriptionName: sub.name },
-    'Unrecognised subscription name — defaulting to CONVERT. Align the dashboard plan name.',
+    'Unrecognised subscription name — defaulting to PRO. Align the dashboard plan name.',
   );
-  return 'CONVERT';
+  return 'PRO';
 }
 
 /**
