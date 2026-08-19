@@ -44,17 +44,22 @@ export async function enqueueInstallBackfill(input: {
       ? input.installKey.getTime()
       : (input.installKey ?? 'initial');
 
+  // The install key joins with a DASH, not a colon. BullMQ rejects a custom
+  // job id containing colons unless it splits into exactly three parts
+  // ("Custom Id cannot contain :"), so a fourth segment throws at enqueue time
+  // — which, inside the try/catch at the call sites, would have been logged
+  // and swallowed, leaving installs with no backfill and no visible error.
   await ingestionQueue.add(
     'ingest:products',
     { storeId, shopDomain, origin: 'install', force: true },
-    { jobId: `install:products:${storeId}:${key}` },
+    { jobId: `install:products:${storeId}-${key}` },
   );
 
   await ingestionQueue.add(
     'ingest:orders',
     { storeId, shopDomain, origin: 'install', sinceDays: 90 },
     {
-      jobId: `install:orders:${storeId}:${key}`,
+      jobId: `install:orders:${storeId}-${key}`,
       // Products first: order→product matching needs the catalog present, and
       // verified-buyer status depends on that match.
       //
