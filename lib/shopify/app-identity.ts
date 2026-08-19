@@ -32,9 +32,16 @@ export const APP_HOST = 'cited.solnix.store';
  * (test access, dev store only — final approval still pending). This must
  * stay in step with shopify.app.toml and SHOPIFY_SCOPES in the environment
  * or the health check below fails every production deploy.
+ *
+ * `write_products` rather than `read_products` because Shopify requires
+ * approved review apps to maintain the `reviews.rating` and
+ * `reviews.rating_count` PRODUCT metafields, and `metafieldsSet` demands the
+ * same access as mutating the owner resource. With read access it answered
+ * ACCESS_DENIED, so every rating we published was invisible to the Shop app
+ * and to Google. Write implies read, so nothing else needed widening.
  */
 export const APP_SCOPES =
-  'read_products,read_orders,read_customers,read_metaobjects,write_product_reviews';
+  'write_products,read_orders,read_customers,read_metaobjects,write_product_reviews';
 
 /** Normalize a comma-separated scope string for order-insensitive comparison. */
 function normalizeScopes(raw: string): string {

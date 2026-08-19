@@ -25,7 +25,12 @@ embedded = true
 # Keep this in step with APP_SCOPES in lib/shopify/app-identity.ts and
 # SHOPIFY_SCOPES in the environment. The health check compares all three,
 # so a mismatch fails every production deploy. See ACCESS-REQUEST.md §6.
-scopes = "read_products,read_orders,read_customers,read_metaobjects,write_product_reviews"
+#
+# `write_products`, not `read_products`: Shopify requires approved review apps
+# to maintain the `reviews.rating` / `reviews.rating_count` product metafields,
+# and `metafieldsSet` requires the same access as mutating the owner resource.
+# Read access returned ACCESS_DENIED and no rating ever reached Shopify.
+scopes = "write_products,read_orders,read_customers,read_metaobjects,write_product_reviews"
 use_legacy_install_flow = false
 
 [auth]

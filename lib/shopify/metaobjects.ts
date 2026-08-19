@@ -397,7 +397,18 @@ export async function setProductRatingMetafields(
     ],
   });
 
-  const errors = resp.data?.metafieldsSet.userErrors ?? [];
+  // `data.metafieldsSet` is null when the mutation failed at the GraphQL level
+  // rather than validation — a missing scope being the case that matters here.
+  // Reading `.userErrors` straight off it turned "Access denied for
+  // metafieldsSet" into "Cannot read properties of null", which is how a
+  // missing `write_products` scope stayed hidden behind a TypeError.
+  if (!resp.data?.metafieldsSet) {
+    const message = resp.errors?.map((e) => e.message).join('; ') ?? 'metafieldsSet returned no data';
+    const denied = /access denied|required access/i.test(message);
+    throw new MetaobjectError(`metafieldsSet: ${message}`, denied ? 'ACCESS_DENIED' : undefined, denied);
+  }
+
+  const errors = resp.data.metafieldsSet.userErrors ?? [];
   if (errors.length > 0) {
     const first = errors[0]!;
     throw new MetaobjectError(
