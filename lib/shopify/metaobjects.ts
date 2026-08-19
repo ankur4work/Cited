@@ -88,7 +88,16 @@ export interface ReviewMetaobjectInput {
   source: string;
   title?: string | null;
   body?: string | null;
+  /**
+   * The reviewer's name as shown to shoppers. Goes to `author_display_name`,
+   * NOT `author` — see buildFields.
+   */
   author?: string | null;
+  /**
+   * Customer GID, when the reviewer was a signed-in customer. This is the only
+   * thing the standard definition's `author` field accepts.
+   */
+  authorCustomerGid?: string | null;
   orderGid?: string | null;
   variantGid?: string | null;
   merchantReply?: string | null;
@@ -140,10 +149,17 @@ function buildFields(input: ReviewMetaobjectInput): Array<{ key: string; value: 
   // Optional fields are omitted entirely when empty rather than sent blank.
   // A present-but-empty value overwrites whatever is already stored, which
   // silently erases data on a partial update.
+  // `author` is a customer_reference in the standard product_review
+  // definition, not a name. Writing "Priya S" into it fails the whole upsert
+  // with "Value must be a valid customer reference", which took every review
+  // ever submitted down with it — the row saved, the storefront aggregate
+  // updated, and nothing ever reached Shopify. The name belongs in
+  // `author_display_name`; `author` only ever gets a real customer GID.
   const optional: Array<[string, string | null | undefined]> = [
     ['title', input.title],
     ['body', input.body],
-    ['author', input.author],
+    ['author_display_name', input.author],
+    ['author', input.authorCustomerGid],
     ['order', input.orderGid],
     ['product_variant', input.variantGid],
     ['merchant_reply', input.merchantReply],

@@ -3,7 +3,7 @@ import { getOverview, getRecentReviews, getSetupSteps } from '@/lib/dashboard';
 import { checkThemeBlock } from '@/lib/theme-block';
 import { SessionBootstrap } from './_components/session-bootstrap';
 import { OverviewView } from './_components/overview-view';
-import { OpenFromAdmin } from './_components/open-from-admin';
+import { SessionRecovery } from './_components/session-recovery';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,7 +25,7 @@ export default async function Home({
     idToken: searchParams.id_token,
   });
 
-  if (session.state === 'no-shop') return <OpenFromAdmin />;
+  if (session.state === 'no-shop') return <SessionRecovery />;
   if (session.state === 'needs-token') return <SessionBootstrap shop={session.shop} />;
 
   const store = session.store;

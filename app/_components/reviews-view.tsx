@@ -1,5 +1,6 @@
 'use client';
 
+import { useSearchParams } from 'next/navigation';
 import { Box, Card, EmptyState, Page, Tabs } from '@shopify/polaris';
 import { ReviewModeration, type ModerationRow } from './review-moderation';
 
@@ -25,6 +26,20 @@ export function ReviewsView({
     FILTERS.findIndex((f) => f.id === filter),
   );
 
+  /*
+   * The server identifies the store from `?shop=`, so every in-app link has to
+   * carry it forward. Dropping it used to send the merchant to "Open Cited from
+   * your Shopify admin" — from inside the Shopify admin — on the first tab
+   * click. SessionRecovery now repairs that case, but repairing it costs an
+   * extra navigation, and the link already knows the answer.
+   */
+  const params = useSearchParams();
+  const shop = params.get('shop');
+  const href = (status: ReviewStatusFilter) =>
+    shop
+      ? `/reviews?status=${status}&shop=${encodeURIComponent(shop)}`
+      : `/reviews?status=${status}`;
+
   return (
     <Page title="Reviews" subtitle="Moderate what appears on your storefront and in Shopify">
       <Card padding="0">
@@ -37,7 +52,7 @@ export function ReviewsView({
           tabs={FILTERS.map((f) => ({
             id: f.id,
             content: f.content,
-            url: `/reviews?status=${f.id}`,
+            url: href(f.id),
           }))}
           selected={selected}
         />
@@ -47,7 +62,7 @@ export function ReviewsView({
               heading={filter === 'ALL' ? 'No reviews yet' : 'Nothing in this view'}
               image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
               action={
-                filter === 'ALL' ? undefined : { content: 'See all reviews', url: '/reviews?status=ALL' }
+                filter === 'ALL' ? undefined : { content: 'See all reviews', url: href('ALL') }
               }
             >
               <p>

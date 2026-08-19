@@ -126,7 +126,11 @@
           if review.rating != blank and review.rating.value != blank
             assign r_rating = review.rating.value.rating | times: 1.0
           endif
-          assign r_author = review.author | default: block.settings.anonymous_label
+          {%- comment -%}
+            `author` on the standard definition is a customer reference, not a
+            name. The display name lives in `author_display_name`.
+          {%- endcomment -%}
+          assign r_author = review.author_display_name | default: block.settings.anonymous_label
           assign r_verified = false
           if review.app_verification_status == 'verified_buyer'
             assign r_verified = true
@@ -368,7 +372,7 @@
           },
           "author": {
             "@type": "Person",
-            "name": {{ review.author | default: 'Anonymous' | json }}
+            "name": {{ review.author_display_name | default: 'Anonymous' | json }}
           }
           {%- if review.body != blank -%}
           ,"reviewBody": {{ review.body | json }}

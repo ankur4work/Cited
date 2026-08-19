@@ -6,7 +6,11 @@ import { Banner, BlockStack, Card, Page, Spinner, Text } from '@shopify/polaris'
 
 declare global {
   interface Window {
-    shopify?: { idToken?: () => Promise<string> };
+    /**
+     * App Bridge, loaded from Shopify's CDN. The single declaration for the
+     * whole app — session-recovery.tsx reads `config.shop` from it too.
+     */
+    shopify?: { idToken?: () => Promise<string>; config?: { shop?: string } };
   }
 }
 
