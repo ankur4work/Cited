@@ -102,7 +102,13 @@ async function exchangeAndPersist(
   const firstUsableToken = !previous?.accessToken || needsReauth(previous);
   if (firstUsableToken) {
     try {
-      await enqueueInstallBackfill({ storeId: store.id, shopDomain: shop });
+      await enqueueInstallBackfill({
+        storeId: store.id,
+        shopDomain: shop,
+        // Fresh on every install, so a reinstall is not deduped against the
+        // previous install's completed jobs.
+        installKey: store.installedAt,
+      });
     } catch (err) {
       logger.error(
         { shop, err: (err as Error).message },

@@ -32,12 +32,19 @@ export const REVIEW_BLOCK_HANDLE = 'reviews';
  * instead of a dead end.
  */
 export function themeEditorDeepLink(shopDomain: string): string {
-  const params = new URLSearchParams({
-    template: 'product',
-    addAppBlockId: `${THEME_EXTENSION_UUID}/${REVIEW_BLOCK_HANDLE}`,
-    target: 'mainSection',
-  });
-  return `https://${shopDomain}/admin/themes/current/editor?${params.toString()}`;
+  // Built by hand rather than with URLSearchParams, which percent-encodes the
+  // separator in `{uuid}/{handle}` to %2F. Shopify's editor expects a literal
+  // slash there; encoded, it fails to resolve the block and the merchant lands
+  // on the template with nothing preselected.
+  //
+  // Nothing here is user input — both values are module constants — so there
+  // is no injection surface to encode against.
+  return (
+    `https://${shopDomain}/admin/themes/current/editor` +
+    `?template=product` +
+    `&addAppBlockId=${THEME_EXTENSION_UUID}/${REVIEW_BLOCK_HANDLE}` +
+    `&target=mainSection`
+  );
 }
 
 export type ThemeBlockStatus = 'installed' | 'missing' | 'unknown';

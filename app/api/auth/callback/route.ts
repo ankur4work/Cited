@@ -83,7 +83,13 @@ export async function GET(req: NextRequest) {
   // redirect into the app. Failures surface in the onboarding UI, which polls
   // job state, rather than as a dead-end error page here.
   try {
-    await enqueueInstallBackfill({ storeId: store.id, shopDomain: shop });
+    await enqueueInstallBackfill({
+      storeId: store.id,
+      shopDomain: shop,
+      // upsertStoreWithToken stamps installedAt on every install, so this
+      // differs across reinstalls and the job IDs stay unique.
+      installKey: store.installedAt,
+    });
   } catch (err) {
     logger.error({ shop, err: (err as Error).message }, 'Failed to enqueue install backfill');
   }

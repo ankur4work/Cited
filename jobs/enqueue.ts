@@ -26,20 +26,35 @@ import { logger } from '@/lib/logger';
 export async function enqueueInstallBackfill(input: {
   storeId: string;
   shopDomain: string;
+  /**
+   * Makes the job IDs unique per install — pass `Store.installedAt`.
+   *
+   * Without it a reinstall backfills nothing. Completed jobs are retained for
+   * 7 days, so `install:products:{storeId}` still exists from the first
+   * install and BullMQ drops the re-add as a duplicate: no job, no error,
+   * no products. That is exactly what happened on the 2026-08-19 reinstall,
+   * and it was invisible because the previous catalogue was still in the
+   * database and looked like a successful sync.
+   */
+  installKey?: Date | string | number;
 }): Promise<void> {
   const { storeId, shopDomain } = input;
+  const key =
+    input.installKey instanceof Date
+      ? input.installKey.getTime()
+      : (input.installKey ?? 'initial');
 
   await ingestionQueue.add(
     'ingest:products',
     { storeId, shopDomain, origin: 'install', force: true },
-    { jobId: `install:products:${storeId}` },
+    { jobId: `install:products:${storeId}:${key}` },
   );
 
   await ingestionQueue.add(
     'ingest:orders',
     { storeId, shopDomain, origin: 'install', sinceDays: 90 },
     {
-      jobId: `install:orders:${storeId}`,
+      jobId: `install:orders:${storeId}:${key}`,
       // Products first: order→product matching needs the catalog present, and
       // verified-buyer status depends on that match.
       //
