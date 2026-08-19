@@ -116,6 +116,109 @@
   font-size: 0.875rem;
 }
 
+/*
+ * Review form. Inherits the theme's font and input styling wherever it can —
+ * only layout, spacing and the block's own custom properties are set here, so
+ * the form looks like part of the store rather than like a bolted-on widget.
+ */
+.cited-reviews__form-wrap {
+  margin-top: calc(var(--cited-gap) * 1.5);
+  padding-top: var(--cited-gap);
+  border-top: 1px solid var(--cited-border);
+}
+
+.cited-reviews__form-heading { font-size: 1rem; font-weight: 600; margin: 0 0 var(--cited-gap); }
+
+.cited-reviews__form { display: grid; gap: var(--cited-gap); max-width: 34rem; }
+
+/*
+ * Left as a block rather than a flex container: `legend` does not participate
+ * in flex layout consistently across browsers, and the labels are already
+ * inline-flex, so they wrap on their own line without needing it.
+ */
+.cited-reviews__rating { border: 0; padding: 0; margin: 0; }
+
+.cited-reviews__rating legend { padding: 0; margin-bottom: 6px; font-size: 0.875rem; }
+
+.cited-reviews__rating-label { margin-right: 6px; }
+
+/*
+ * Visually hidden, not display:none — the radio must stay focusable and
+ * reachable by keyboard, which display:none would remove from the tab order.
+ */
+.cited-reviews__rating-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.cited-reviews__rating-label {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border: 1px solid var(--cited-border);
+  border-radius: var(--cited-radius);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.cited-reviews__rating-input:checked + .cited-reviews__rating-label {
+  border-color: var(--cited-star);
+  box-shadow: inset 0 0 0 1px var(--cited-star);
+  font-weight: 600;
+}
+
+/* Focus must be visible on the label, since the input itself is off-screen. */
+.cited-reviews__rating-input:focus-visible + .cited-reviews__rating-label {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.cited-reviews__field { display: grid; gap: 4px; font-size: 0.875rem; }
+.cited-reviews__field small { color: var(--cited-muted); font-size: 0.75rem; }
+
+.cited-reviews__field input,
+.cited-reviews__field textarea {
+  font: inherit;
+  color: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--cited-border);
+  border-radius: var(--cited-radius);
+  background: transparent;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.cited-reviews__field textarea { resize: vertical; }
+
+.cited-reviews__submit {
+  font: inherit;
+  justify-self: start;
+  padding: 10px 20px;
+  border: 1px solid currentColor;
+  border-radius: var(--cited-radius);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* Honeypot: off-screen for people, still in the DOM for bots to fill. */
+.cited-reviews__hp {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.cited-reviews--notice { max-width: 34rem; }
+
 .cited-stars { display: inline-flex; gap: 1px; line-height: 0; }
 .cited-stars svg { display: block; }
 .cited-stars__star { color: var(--cited-border); }

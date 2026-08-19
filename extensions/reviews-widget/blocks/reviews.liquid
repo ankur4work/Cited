@@ -229,6 +229,99 @@
       </a>
     {%- endif -%}
   {%- endif -%}
+
+  {%- comment -%}
+    ── Write a review ──
+
+    A plain HTML form posting to the app proxy on this shop's own domain. No
+    JavaScript, no iframe, no third-party origin: it submits, the server
+    answers with a rendered page in this theme, and it behaves identically
+    with scripting disabled. The proxy path must match `subpath` in
+    shopify.app.toml — Liquid cannot read that file.
+
+    A signed-in shopper's name and email are prefilled from their account, and
+    only that path can earn a "Verified purchase" badge: the app looks the
+    address up from Shopify rather than believing this form. A typed address is
+    an unauthenticated claim and is treated as one.
+  {%- endcomment -%}
+  {%- if block.settings.enable_form -%}
+    <div class="cited-reviews__form-wrap">
+      <h3 class="cited-reviews__form-heading">{{ block.settings.form_heading | escape }}</h3>
+
+      <form class="cited-reviews__form" method="post" action="/apps/cited/reviews" accept-charset="UTF-8">
+        <input type="hidden" name="product_id" value="{{ product.id }}">
+        <input type="hidden" name="return_path" value="{{ product.url }}">
+
+        <fieldset class="cited-reviews__rating">
+          <legend>Your rating</legend>
+          {%- comment -%}
+            Radios, not a star strip driven by script. A radio group is
+            keyboard-navigable, announced correctly by screen readers, and
+            submits without JavaScript — which a click-to-rate star row cannot
+            do at all.
+          {%- endcomment -%}
+          {%- for value in (1..5) -%}
+            <input
+              class="cited-reviews__rating-input"
+              type="radio"
+              id="cited-rating-{{ block.id }}-{{ value }}"
+              name="rating"
+              value="{{ value }}"
+              required
+            >
+            <label class="cited-reviews__rating-label" for="cited-rating-{{ block.id }}-{{ value }}">
+              <span class="cited-reviews__rating-text">{{ value }} star{% if value != 1 %}s{% endif %}</span>
+            </label>
+          {%- endfor -%}
+        </fieldset>
+
+        <label class="cited-reviews__field">
+          <span>Title</span>
+          <input type="text" name="title" maxlength="200" autocomplete="off">
+        </label>
+
+        <label class="cited-reviews__field">
+          <span>Your review</span>
+          <textarea name="body" rows="4" maxlength="5000" required></textarea>
+        </label>
+
+        <label class="cited-reviews__field">
+          <span>Name</span>
+          <input
+            type="text"
+            name="author_name"
+            maxlength="100"
+            autocomplete="name"
+            value="{% if customer %}{{ customer.name | escape }}{% endif %}"
+          >
+        </label>
+
+        <label class="cited-reviews__field">
+          <span>Email</span>
+          <input
+            type="email"
+            name="author_email"
+            maxlength="254"
+            autocomplete="email"
+            required
+            value="{% if customer %}{{ customer.email | escape }}{% endif %}"
+          >
+          <small>Not published. Used to match your order and to contact you about this review.</small>
+        </label>
+
+        {%- comment -%}
+          Honeypot. Hidden from people by CSS and from screen readers by
+          aria-hidden, left visible to the sort of bot that fills every input
+          it can find. Rejected server-side.
+        {%- endcomment -%}
+        <div class="cited-reviews__hp" aria-hidden="true">
+          <label>Website<input type="text" name="website" tabindex="-1" autocomplete="off"></label>
+        </div>
+
+        <button class="cited-reviews__submit" type="submit">{{ block.settings.form_button | escape }}</button>
+      </form>
+    </div>
+  {%- endif -%}
 </section>
 
 {%- comment -%}
@@ -343,6 +436,29 @@
       "id": "load_more_text",
       "label": "Load more button text",
       "default": "Show more reviews"
+    },
+    {
+      "type": "header",
+      "content": "Collecting reviews"
+    },
+    {
+      "type": "checkbox",
+      "id": "enable_form",
+      "label": "Let shoppers write a review here",
+      "info": "Shows a review form under the reviews. Submissions follow your moderation setting in the Cited admin.",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "form_heading",
+      "label": "Review form heading",
+      "default": "Write a review"
+    },
+    {
+      "type": "text",
+      "id": "form_button",
+      "label": "Submit button text",
+      "default": "Submit review"
     },
     {
       "type": "header",

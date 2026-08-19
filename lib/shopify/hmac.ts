@@ -21,7 +21,7 @@ export function verifyWebhookHmac(rawBody: string | Buffer, hmacHeader: string |
   return safeEqualB64(computed, hmacHeader);
 }
 
-function safeEqualHex(a: string, b: string): boolean {
+export function safeEqualHex(a: string, b: string): boolean {
   try {
     const ab = Buffer.from(a, 'hex');
     const bb = Buffer.from(b, 'hex');

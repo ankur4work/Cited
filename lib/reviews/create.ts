@@ -27,6 +27,16 @@ export interface CreateReviewInput {
   userAgent?: string | null;
   /** Set when the review came from a verified email link rather than a form. */
   trustedOrderGid?: string | null;
+  /**
+   * Did we establish this email, or did someone type it into a public form?
+   *
+   * Defaults to true because every original caller — import, merchant entry,
+   * one-click email link — supplies an address the store already held. The
+   * anonymous storefront form is the exception and passes false: there, the
+   * email is an unauthenticated claim, and matching it against orders would
+   * hand out "Verified purchase" to anyone who can guess a customer's address.
+   */
+  emailIsTrusted?: boolean;
   source?: 'NATIVE' | 'IMPORT' | 'SYNDICATED' | 'MANUAL';
   sourceLabel?: string;
 }
@@ -67,11 +77,18 @@ async function determineVerification(input: {
   productId: string;
   emailHash: string | null;
   trustedOrderGid?: string | null;
+  emailIsTrusted: boolean;
 }): Promise<{ verification: VerificationStatus; orderGid: string | null }> {
   if (input.trustedOrderGid) {
     return { verification: 'VERIFIED_BUYER', orderGid: input.trustedOrderGid };
   }
   if (!input.emailHash) {
+    return { verification: 'UNVERIFIED', orderGid: null };
+  }
+  // An untrusted address proves nothing, so it earns no badge. The review is
+  // still stored with its hash — dedup and any later email confirmation both
+  // need it — it simply cannot promote itself past UNVERIFIED.
+  if (!input.emailIsTrusted) {
     return { verification: 'UNVERIFIED', orderGid: null };
   }
 
@@ -179,6 +196,7 @@ export async function createReview(input: CreateReviewInput): Promise<Review> {
       productId: input.productId,
       emailHash,
       trustedOrderGid: input.trustedOrderGid,
+      emailIsTrusted: input.emailIsTrusted !== false,
     }),
     scoreForAbuse({ storeId: input.storeId, ipHash, body: input.body }),
   ]);

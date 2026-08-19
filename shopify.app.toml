@@ -41,6 +41,22 @@ redirect_urls = [
   "https://cited.solnix.store/api/auth/shopify/callback",
 ]
 
+# Storefront review submission.
+#
+# Gives the theme block a same-origin URL to post to — `/apps/cited/reviews` on
+# the merchant's own domain — so the review form works with JavaScript
+# disabled, which is the entire premise of a server-rendered block. Shopify
+# signs every proxied request; app/api/proxy/reviews verifies that signature
+# before touching the database.
+#
+# `subpath` must stay in step with the form action in
+# extensions/reviews-widget/blocks/reviews.liquid — Liquid has no way to read
+# this file, so the path is written out in both places.
+[app_proxy]
+url = "https://cited.solnix.store/api/proxy"
+subpath = "cited"
+prefix = "apps"
+
 [webhooks]
 api_version = "2025-07"
 
