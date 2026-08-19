@@ -24,7 +24,7 @@
 .cited-reviews__summary {
   display: flex;
   align-items: center;
-  gap: var(--cited-gap);
+  gap: calc(var(--cited-gap) * 1.25);
   flex-wrap: wrap;
   padding-bottom: var(--cited-gap);
   border-bottom: 1px solid var(--cited-border);
@@ -32,12 +32,22 @@
 
 .cited-reviews__score {
   display: flex;
-  align-items: baseline;
-  gap: 2px;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
 }
 
-.cited-reviews__score-value { font-size: 2rem; font-weight: 700; line-height: 1; }
-.cited-reviews__score-scale { font-size: 0.875rem; color: var(--cited-muted); }
+.cited-reviews__summary-meta { display: grid; gap: 6px; }
+
+.cited-reviews__score-value { font-size: 2.75rem; font-weight: 700; line-height: 1; }
+
+.cited-reviews__score-scale {
+  font-size: 0.75rem;
+  color: var(--cited-muted);
+  margin-top: 4px;
+  white-space: nowrap;
+}
+
 .cited-reviews__count { margin: 0; font-size: 0.875rem; color: var(--cited-muted); }
 .cited-reviews__empty { padding: var(--cited-gap) 0; color: var(--cited-muted); }
 
@@ -62,10 +72,27 @@
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  margin-top: 4px;
+  margin-top: 6px;
   font-size: 0.8125rem;
   color: var(--cited-muted);
 }
+
+/* Initial-in-a-circle. No image, no request, no generated identicon. */
+.cited-review__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--cited-border);
+  color: var(--cited-text);
+  font-size: 0.75rem;
+  font-weight: 600;
+  flex: none;
+}
+
+.cited-review__author { font-weight: 600; color: var(--cited-text); }
 
 /*
  * Deliberately NOT driven by a theme setting or custom property. Every other

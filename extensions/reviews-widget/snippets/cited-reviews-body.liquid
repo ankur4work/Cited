@@ -102,18 +102,19 @@
     <div class="cited-reviews__summary">
       <div class="cited-reviews__score">
         <span class="cited-reviews__score-value">{{ rating_avg | round: 1 }}</span>
-        <span class="cited-reviews__score-scale">/ {{ scale_max }}</span>
+        <span class="cited-reviews__score-scale">out of {{ scale_max }}</span>
       </div>
 
-      {%- render 'cited-stars', rating: rating_avg, scale_max: scale_max -%}
-
-      <p class="cited-reviews__count">
-        {%- if rating_count == 1 -%}
-          1 review
-        {%- else -%}
-          {{ rating_count }} reviews
-        {%- endif -%}
-      </p>
+      <div class="cited-reviews__summary-meta">
+        {%- render 'cited-stars', rating: rating_avg, scale_max: scale_max, size: 22 -%}
+        <p class="cited-reviews__count">
+          {%- if rating_count == 1 -%}
+            Based on 1 review
+          {%- else -%}
+            Based on {{ rating_count }} reviews
+          {%- endif -%}
+        </p>
+      </div>
     </div>
   {%- else -%}
     <div class="cited-reviews__empty">
@@ -145,13 +146,19 @@
         -%}
         <li class="cited-review">
           <div class="cited-review__head">
-            {%- render 'cited-stars', rating: r_rating, scale_max: scale_max -%}
+            {%- render 'cited-stars', rating: r_rating, scale_max: scale_max, size: 15 -%}
             {%- if review.title != blank -%}
               <h3 class="cited-review__title">{{ review.title | escape }}</h3>
             {%- endif -%}
           </div>
 
           <div class="cited-review__meta">
+            {%- comment -%}
+              An initial rather than an avatar image: there is no photo to
+              show, and a generated identicon would be decoration that costs a
+              request. aria-hidden because the name follows it in full.
+            {%- endcomment -%}
+            <span class="cited-review__avatar" aria-hidden="true">{{ r_author | slice: 0 | upcase }}</span>
             <span class="cited-review__author">{{ r_author | escape }}</span>
             {%- comment -%}
               This is OUR order-match badge. It is deliberately NOT, and must

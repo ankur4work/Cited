@@ -112,6 +112,24 @@ export interface ReviewMetaobjectInput {
  * its members as STRINGS. Sending `{"value": 5}` is rejected where
  * `{"value": "5.0"}` is accepted — an easy and very confusing failure.
  */
+/**
+ * Serialize a `date_time` field the way Shopify stores it.
+ *
+ * Shopify truncates date_time to whole seconds: send
+ * `2026-08-19T22:01:04.668Z` and it stores `2026-08-19T22:01:04Z`. Since
+ * drift detection compares our serialization against the stored value as
+ * strings, milliseconds made every field permanently unequal to itself.
+ *
+ * The consequence was not a wrong timestamp. It was a loop: write the
+ * metaobject, Shopify fires metaobjects/update, reconcile sees "drift",
+ * marks the review PENDING and rewrites it — forever, for every review, on
+ * every store. The syncStatus never settling on SYNCED was the visible edge
+ * of it.
+ */
+function dateTimeValue(date: Date): string {
+  return date.toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
 function ratingValue(rating: number, scaleMin: number, scaleMax: number): string {
   return JSON.stringify({
     scale_min: scaleMin.toFixed(1),
@@ -140,7 +158,7 @@ function buildFields(input: ReviewMetaobjectInput): Array<{ key: string; value: 
 
   const fields: Array<{ key: string; value: string }> = [
     { key: 'rating', value: ratingValue(input.rating, scaleMin, scaleMax) },
-    { key: 'submitted_at', value: input.submittedAt.toISOString() },
+    { key: 'submitted_at', value: dateTimeValue(input.submittedAt) },
     { key: 'source', value: input.source },
     { key: 'product', value: input.productGid },
     { key: 'app_verification_status', value: input.verification },
@@ -173,7 +191,7 @@ function buildFields(input: ReviewMetaobjectInput): Array<{ key: string; value: 
     fields.push({ key: 'media_urls', value: JSON.stringify(input.mediaUrls) });
   }
   if (input.publishedAt) {
-    fields.push({ key: 'published_at', value: input.publishedAt.toISOString() });
+    fields.push({ key: 'published_at', value: dateTimeValue(input.publishedAt) });
   }
 
   return fields;
