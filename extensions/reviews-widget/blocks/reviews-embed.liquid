@@ -1,0 +1,198 @@
+{% comment %}
+  Cited — product reviews, as an APP EMBED.
+
+  One toggle in Theme settings → App embeds, and reviews are on for every
+  product. No placement step, no per-template work, and nothing a theme can
+  refuse — an app block can only go where a section's schema declares
+  `{"type": "@app"}`, and plenty of themes never do. When that happens the
+  theme editor says "there is a problem with the app block", which reads as
+  the app's fault and is not.
+
+  The trade is placement. Shopify injects app embeds at the end of <body>,
+  after the footer, and gives no way to say otherwise — so
+  assets/cited-embed-place.js moves this into position on load.
+
+  That script is the ONLY JavaScript in Cited's storefront path, and it is
+  worth being precise about what it does and does not cost. The review text,
+  the ratings and the JSON-LD are all in the server's HTML response before any
+  script runs, which is the entire SEO and AI-visibility claim, and it is
+  unaffected. What needs JavaScript is where the block sits on the page. With
+  scripting off, the reviews still render, still parse and still rank — they
+  simply appear at the bottom of the page.
+
+  A merchant who wants exact placement and no script at all should use the app
+  block instead. If both are on, the script removes this copy rather than
+  showing two sets of reviews — the duplicate-widget complaint is the single
+  most common one levelled at our competitors (PLAN.md §2, W1).
+{% endcomment %}
+
+{%- comment -%}
+  Product pages only. App embeds render on every page of the storefront, so
+  without this guard the block would try to render a review section on the
+  cart, the blog and the 404 page.
+{%- endcomment -%}
+{%- if template.name == 'product' and product != blank -%}
+  {%- render 'cited-reviews-body',
+    product: product,
+    uid: 'embed',
+    shopify_attributes: '',
+    is_embed: true,
+    anchor: block.settings.anchor_selector,
+    heading: block.settings.heading,
+    per_page: block.settings.reviews_per_page,
+    show_media: block.settings.show_media,
+    enable_jsonld: block.settings.enable_jsonld,
+    empty_text: block.settings.empty_text,
+    anonymous_label: block.settings.anonymous_label,
+    load_more_text: block.settings.load_more_text,
+    enable_form: block.settings.enable_form,
+    form_heading: block.settings.form_heading,
+    form_button: block.settings.form_button,
+    star_color: block.settings.star_color,
+    text_color: block.settings.text_color,
+    muted_color: block.settings.muted_color,
+    border_color: block.settings.border_color,
+    corner_radius: block.settings.corner_radius,
+    spacing: block.settings.spacing
+  -%}
+
+  <script src="{{ 'cited-embed-place.js' | asset_url }}" defer></script>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Cited Reviews (all products)",
+  "target": "body",
+  "settings": [
+    {
+      "type": "paragraph",
+      "content": "Reviews appear on every product page automatically. For exact placement inside your product section, use the 'Cited Reviews' block in the theme editor instead."
+    },
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "Customer reviews"
+    },
+    {
+      "type": "text",
+      "id": "anchor_selector",
+      "label": "Place reviews after this element (advanced)",
+      "info": "A CSS selector, e.g. .product__info-wrapper. Leave blank to let Cited find the product area itself.",
+      "default": ""
+    },
+    {
+      "type": "range",
+      "id": "reviews_per_page",
+      "label": "Reviews shown initially",
+      "info": "Rendered server-side for SEO and AI crawlers. Higher values mean a larger HTML response.",
+      "min": 3,
+      "max": 25,
+      "step": 1,
+      "default": 10
+    },
+    {
+      "type": "checkbox",
+      "id": "show_media",
+      "label": "Show review photos",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "enable_jsonld",
+      "label": "Output structured data (JSON-LD)",
+      "info": "Enables star ratings in Google results and makes reviews readable by AI shopping assistants. Turn off only if another app already outputs review structured data.",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "empty_text",
+      "label": "Text shown when there are no reviews",
+      "default": "No reviews yet. Be the first to share your thoughts."
+    },
+    {
+      "type": "text",
+      "id": "anonymous_label",
+      "label": "Label for anonymous reviewers",
+      "default": "Anonymous"
+    },
+    {
+      "type": "text",
+      "id": "load_more_text",
+      "label": "Load more button text",
+      "default": "Show more reviews"
+    },
+    {
+      "type": "header",
+      "content": "Collecting reviews"
+    },
+    {
+      "type": "checkbox",
+      "id": "enable_form",
+      "label": "Let shoppers write a review here",
+      "info": "Shows a review form under the reviews. Submissions follow your moderation setting in the Cited admin.",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "form_heading",
+      "label": "Review form heading",
+      "default": "Write a review"
+    },
+    {
+      "type": "text",
+      "id": "form_button",
+      "label": "Submit button text",
+      "default": "Submit review"
+    },
+    {
+      "type": "header",
+      "content": "Appearance"
+    },
+    {
+      "type": "color",
+      "id": "star_color",
+      "label": "Star colour",
+      "default": "#FFB800"
+    },
+    {
+      "type": "color",
+      "id": "text_color",
+      "label": "Text colour",
+      "default": "#1A1A1A"
+    },
+    {
+      "type": "color",
+      "id": "muted_color",
+      "label": "Secondary text colour",
+      "default": "#6B7280"
+    },
+    {
+      "type": "color",
+      "id": "border_color",
+      "label": "Border colour",
+      "default": "#E5E7EB"
+    },
+    {
+      "type": "range",
+      "id": "corner_radius",
+      "label": "Corner radius",
+      "min": 0,
+      "max": 24,
+      "step": 1,
+      "unit": "px",
+      "default": 8
+    },
+    {
+      "type": "range",
+      "id": "spacing",
+      "label": "Spacing",
+      "min": 8,
+      "max": 40,
+      "step": 2,
+      "unit": "px",
+      "default": 16
+    }
+  ]
+}
+{% endschema %}

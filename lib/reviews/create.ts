@@ -213,29 +213,39 @@ export async function createReview(input: CreateReviewInput): Promise<Review> {
   // reason to put likely spam on a storefront.
   const publish = autoPublish && abuse.score < 0.5;
 
-  const review = await prisma.review.create({
-    data: {
-      storeId: input.storeId,
-      productId: input.productId,
-      rating: input.rating,
-      title: input.title ?? null,
-      body: input.body ?? null,
-      authorName: input.authorName ?? null,
-      authorEmailEnc: input.authorEmail ? encrypt(input.authorEmail) : null,
-      authorEmailHash: emailHash,
-      orderShopifyGid: orderGid,
-      language: input.language ?? 'en',
-      verification,
-      source: input.source ?? 'NATIVE',
-      sourceLabel: input.sourceLabel ?? 'cited',
-      status: publish ? 'PUBLISHED' : 'PENDING',
-      publishedAt: publish ? new Date() : null,
-      ipHash,
-      userAgentHash: input.userAgent ? digest(input.userAgent) : null,
-      fraudScore: abuse.score,
-      fraudReasons: abuse.reasons,
-    },
-  });
+  // The pre-check above is a UX guard, not the guarantee. A partial unique
+  // index on (storeId, productId, authorEmailHash) is what actually holds the
+  // line when two submissions race — a double-clicked form is the common case,
+  // not an exotic one — and it surfaces here as P2002.
+  let review: Review;
+  try {
+    review = await prisma.review.create({
+      data: {
+        storeId: input.storeId,
+        productId: input.productId,
+        rating: input.rating,
+        title: input.title ?? null,
+        body: input.body ?? null,
+        authorName: input.authorName ?? null,
+        authorEmailEnc: input.authorEmail ? encrypt(input.authorEmail) : null,
+        authorEmailHash: emailHash,
+        orderShopifyGid: orderGid,
+        language: input.language ?? 'en',
+        verification,
+        source: input.source ?? 'NATIVE',
+        sourceLabel: input.sourceLabel ?? 'cited',
+        status: publish ? 'PUBLISHED' : 'PENDING',
+        publishedAt: publish ? new Date() : null,
+        ipHash,
+        userAgentHash: input.userAgent ? digest(input.userAgent) : null,
+        fraudScore: abuse.score,
+        fraudReasons: abuse.reasons,
+      },
+    });
+  } catch (err) {
+    if ((err as { code?: string }).code === 'P2002') throw new DuplicateReviewError();
+    throw err;
+  }
 
   // Projection and aggregate are queued, never awaited inline: the reviewer
   // gets their confirmation immediately, and a Shopify outage delays the

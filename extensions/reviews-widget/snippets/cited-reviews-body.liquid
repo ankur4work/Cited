@@ -1,0 +1,393 @@
+{% comment %}
+  The reviews UI itself, shared by both entry points.
+
+  Cited ships two blocks that render exactly the same thing:
+
+    blocks/reviews.liquid       — an app block. The merchant places it inside
+                                  their product section. Exact placement, and
+                                  no JavaScript is involved at any point.
+    blocks/reviews-embed.liquid — an app embed. One toggle in Theme settings
+                                  and it is on for every product, with no
+                                  placement step and nothing a theme can
+                                  refuse. Shopify injects it at the end of
+                                  <body>, so a small script moves it into
+                                  position.
+
+  They live in one snippet because they had already started to drift: `author`
+  on the standard metaobject is a customer reference, not a name, and fixing
+  that in one copy while the other kept writing a person's name into a
+  reference field is precisely the bug that made syndication fail silently for
+  every review ever submitted.
+
+  Parameters are passed explicitly — `render` does not inherit outer scope —
+  so this snippet cannot accidentally depend on which block called it.
+
+  Data source: the standard `product_review` metaobject, plus the
+  Shopify-mandated `reviews.rating` / `reviews.rating_count` product
+  metafields that approved review apps must maintain.
+
+  CSS is scoped entirely under .cited-reviews and driven by custom properties.
+  There are NO global selectors and NO element resets — the most common
+  competitor complaint is a review widget breaking the theme's buy buttons
+  (PLAN.md §2, W1). This cannot reach outside itself.
+{% endcomment %}
+
+{%- liquid
+  assign rating_field = product.metafields.reviews.rating
+  assign count_field = product.metafields.reviews.rating_count
+
+  assign rating_avg = 0
+  if rating_field != blank and rating_field.value != blank
+    assign rating_avg = rating_field.value.rating | times: 1.0
+  endif
+
+  assign rating_count = 0
+  if count_field != blank
+    assign rating_count = count_field.value | plus: 0
+  endif
+
+  # Shopify's `reviews` namespace holds ONLY rating and rating_count - there is
+  # no product-to-reviews link in it. This previously read
+  # `reviews.product_reviews`, a path that does not exist on any store, so the
+  # block could render an average and never a single review.
+  #
+  # Cited maintains the link itself: an app-owned list of product_review
+  # metaobject references, newest first, kept in step by the syndication job.
+  # `app` is the theme-app-extension alias for this app's reserved namespace.
+  assign reviews_list = product.metafields.app.reviews.value
+  assign per_page = per_page | default: 10
+
+  assign scale_max = 5
+  if rating_field != blank and rating_field.value.scale_max != blank
+    assign scale_max = rating_field.value.scale_max | plus: 0
+  endif
+
+  assign has_reviews = false
+  if rating_count > 0
+    assign has_reviews = true
+  endif
+-%}
+
+{%- comment -%}
+  Styles live in assets/, not in a "stylesheet" tag: that tag is a theme
+  *section* feature and the extension bundler rejects it in an app block
+  ("Cannot use stylesheet tag in app blocks"). Emitting the link here also
+  means the stylesheet is requested before the markup below it parses, so it
+  still paints without a flash of unstyled content.
+{%- endcomment -%}
+{{ 'cited-reviews.css' | asset_url | stylesheet_tag }}
+
+<section
+  class="cited-reviews"
+  id="cited-reviews-{{ uid }}"
+  data-cited-product="{{ product.id }}"
+  data-cited-per-page="{{ per_page }}"
+  {% if is_embed %}data-cited-embed data-cited-anchor="{{ anchor | escape }}"{% endif %}
+  style="
+    --cited-star: {{ star_color }};
+    --cited-text: {{ text_color }};
+    --cited-muted: {{ muted_color }};
+    --cited-border: {{ border_color }};
+    --cited-radius: {{ corner_radius }}px;
+    --cited-gap: {{ spacing }}px;
+  "
+  {{ shopify_attributes }}
+>
+  {%- if heading != blank -%}
+    <h2 class="cited-reviews__heading">{{ heading | escape }}</h2>
+  {%- endif -%}
+
+  {%- comment -%} ── Aggregate summary ── {%- endcomment -%}
+  {%- if has_reviews -%}
+    <div class="cited-reviews__summary">
+      <div class="cited-reviews__score">
+        <span class="cited-reviews__score-value">{{ rating_avg | round: 1 }}</span>
+        <span class="cited-reviews__score-scale">/ {{ scale_max }}</span>
+      </div>
+
+      {%- render 'cited-stars', rating: rating_avg, scale_max: scale_max -%}
+
+      <p class="cited-reviews__count">
+        {%- if rating_count == 1 -%}
+          1 review
+        {%- else -%}
+          {{ rating_count }} reviews
+        {%- endif -%}
+      </p>
+    </div>
+  {%- else -%}
+    <div class="cited-reviews__empty">
+      <p>{{ empty_text | escape }}</p>
+    </div>
+  {%- endif -%}
+
+  {%- comment -%}
+    ── Review list ──
+    Rendered server-side. Only the first page is emitted inline; further pages
+    are fetched by the enhancement script. The first page is what matters for
+    SEO and AI ingestion, so crawlability never depends on JS.
+  {%- endcomment -%}
+  {%- if reviews_list != blank -%}
+    <ol class="cited-reviews__list" role="list">
+      {%- for review in reviews_list limit: per_page -%}
+        {%- liquid
+          assign r_rating = 0
+          if review.rating != blank and review.rating.value != blank
+            assign r_rating = review.rating.value.rating | times: 1.0
+          endif
+          # `author` on the standard definition is a customer reference, not a
+          # name. The display name lives in `author_display_name`.
+          assign r_author = review.author_display_name | default: anonymous_label
+          assign r_verified = false
+          if review.app_verification_status == 'verified_buyer'
+            assign r_verified = true
+          endif
+        -%}
+        <li class="cited-review">
+          <div class="cited-review__head">
+            {%- render 'cited-stars', rating: r_rating, scale_max: scale_max -%}
+            {%- if review.title != blank -%}
+              <h3 class="cited-review__title">{{ review.title | escape }}</h3>
+            {%- endif -%}
+          </div>
+
+          <div class="cited-review__meta">
+            <span class="cited-review__author">{{ r_author | escape }}</span>
+            {%- comment -%}
+              This is OUR order-match badge. It is deliberately NOT, and must
+              never resemble, the "Verified by Shop" badge.
+
+              Shopify's rule for approved review apps: use only the official
+              badge assets it provides, and "do not modify, recreate, or alter
+              the badge in any way." The two marks also mean different things —
+              "Verified by Shop" is Shopify attesting via the Shop app, while
+              this says only that Cited matched the reviewer to an order for
+              this product on this store.
+
+              So it is kept distinct on every axis a reviewer would check:
+                * mark    — a bag outline, not a checkmark. A check inside a
+                            circle is the shape people read as Shopify's.
+                * colour  — green, distinct from all three official variants
+                            (purple, black, grey).
+                * wording — names the store, not Shop.
+            {%- endcomment -%}
+            {%- if r_verified -%}
+              <span class="cited-review__verified" title="Cited matched this reviewer to an order on this store">
+                <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
+                  <path
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linejoin="round"
+                    d="M3.4 5.6h9.2l-.8 7.3a1 1 0 0 1-1 .9H5.2a1 1 0 0 1-1-.9zM6 5.6V4.3a2 2 0 0 1 4 0v1.3"
+                  />
+                </svg>
+                Verified purchase
+              </span>
+            {%- endif -%}
+            {%- if review.submitted_at != blank -%}
+              <time class="cited-review__date" datetime="{{ review.submitted_at | date: '%Y-%m-%d' }}">
+                {{ review.submitted_at | date: format: 'abbreviated_date' }}
+              </time>
+            {%- endif -%}
+          </div>
+
+          {%- if review.body != blank -%}
+            <div class="cited-review__body">{{ review.body | escape | newline_to_br }}</div>
+          {%- endif -%}
+
+          {%- if show_media and review.media_urls != blank -%}
+            <div class="cited-review__media">
+              {%- for media_url in review.media_urls limit: 4 -%}
+                <img
+                  class="cited-review__media-item"
+                  src="{{ media_url }}"
+                  alt="Customer photo from a review by {{ r_author | escape }}"
+                  loading="lazy"
+                  decoding="async"
+                  width="88"
+                  height="88"
+                >
+              {%- endfor -%}
+            </div>
+          {%- endif -%}
+
+          {%- if review.merchant_reply != blank -%}
+            <div class="cited-review__reply">
+              <span class="cited-review__reply-label">{{ shop.name | escape }} replied</span>
+              <p>{{ review.merchant_reply | escape | newline_to_br }}</p>
+            </div>
+          {%- endif -%}
+        </li>
+      {%- endfor -%}
+    </ol>
+
+    {%- if rating_count > per_page -%}
+      {%- comment -%}
+        Enhancement target. Server-rendered as a plain link to the product
+        page so it still works with JS disabled; the script upgrades it to
+        in-place pagination.
+      {%- endcomment -%}
+      <a
+        class="cited-reviews__more"
+        href="{{ product.url }}#cited-reviews-{{ uid }}"
+        data-cited-more
+      >
+        {{ load_more_text | escape }}
+      </a>
+    {%- endif -%}
+  {%- endif -%}
+
+  {%- comment -%}
+    ── Write a review ──
+
+    A plain HTML form posting to the app proxy on this shop's own domain. No
+    JavaScript, no iframe, no third-party origin: it submits, the server
+    answers with a rendered page in this theme, and it behaves identically
+    with scripting disabled. The proxy path must match `subpath` in
+    shopify.app.toml — Liquid cannot read that file.
+
+    A signed-in shopper's name and email are prefilled from their account, and
+    only that path can earn a "Verified purchase" badge: the app looks the
+    address up from Shopify rather than believing this form. A typed address
+    is an unauthenticated claim and is treated as one.
+  {%- endcomment -%}
+  {%- if enable_form -%}
+    <div class="cited-reviews__form-wrap">
+      <h3 class="cited-reviews__form-heading">{{ form_heading | escape }}</h3>
+
+      <form class="cited-reviews__form" method="post" action="/apps/cited/reviews" accept-charset="UTF-8">
+        <input type="hidden" name="product_id" value="{{ product.id }}">
+        <input type="hidden" name="return_path" value="{{ product.url }}">
+
+        <fieldset class="cited-reviews__rating">
+          <legend>Your rating</legend>
+          {%- comment -%}
+            Radios, not a star strip driven by script. A radio group is
+            keyboard-navigable, announced correctly by screen readers, and
+            submits without JavaScript — which a click-to-rate star row cannot
+            do at all.
+          {%- endcomment -%}
+          {%- for value in (1..5) -%}
+            <input
+              class="cited-reviews__rating-input"
+              type="radio"
+              id="cited-rating-{{ uid }}-{{ value }}"
+              name="rating"
+              value="{{ value }}"
+              required
+            >
+            <label class="cited-reviews__rating-label" for="cited-rating-{{ uid }}-{{ value }}">
+              <span class="cited-reviews__rating-text">{{ value }} star{% if value != 1 %}s{% endif %}</span>
+            </label>
+          {%- endfor -%}
+        </fieldset>
+
+        <label class="cited-reviews__field">
+          <span>Title</span>
+          <input type="text" name="title" maxlength="200" autocomplete="off">
+        </label>
+
+        <label class="cited-reviews__field">
+          <span>Your review</span>
+          <textarea name="body" rows="4" maxlength="5000" required></textarea>
+        </label>
+
+        <label class="cited-reviews__field">
+          <span>Name</span>
+          <input
+            type="text"
+            name="author_name"
+            maxlength="100"
+            autocomplete="name"
+            value="{% if customer %}{{ customer.name | escape }}{% endif %}"
+          >
+        </label>
+
+        <label class="cited-reviews__field">
+          <span>Email</span>
+          <input
+            type="email"
+            name="author_email"
+            maxlength="254"
+            autocomplete="email"
+            required
+            value="{% if customer %}{{ customer.email | escape }}{% endif %}"
+          >
+          <small>Not published. Used to match your order and to contact you about this review.</small>
+        </label>
+
+        {%- comment -%}
+          Honeypot. Hidden from people by CSS and from screen readers by
+          aria-hidden, left visible to the sort of bot that fills every input
+          it can find. Rejected server-side.
+        {%- endcomment -%}
+        <div class="cited-reviews__hp" aria-hidden="true">
+          <label>Website<input type="text" name="website" tabindex="-1" autocomplete="off"></label>
+        </div>
+
+        <button class="cited-reviews__submit" type="submit">{{ form_button | escape }}</button>
+      </form>
+    </div>
+  {%- endif -%}
+</section>
+
+{%- comment -%}
+  ── Structured data ──
+  Emitted only when reviews actually exist. Emitting AggregateRating with zero
+  reviews is a Google structured-data violation and a fast route to a manual
+  action — which for a merchant means a 1-star app review (PLAN.md §5.4.5).
+
+  @id is pinned to the canonical product URL so search engines MERGE this with
+  the theme's existing Product node rather than treating it as a second,
+  competing product entity.
+{%- endcomment -%}
+{%- if has_reviews and enable_jsonld -%}
+  {%- capture cited_jsonld -%}
+  {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    "@id": {{ shop.url | append: product.url | json }},
+    "name": {{ product.title | json }},
+    "aggregateRating": {
+      "@type": "AggregateRating",
+      "ratingValue": {{ rating_avg | round: 2 | json }},
+      "reviewCount": {{ rating_count | json }},
+      "bestRating": {{ scale_max | json }},
+      "worstRating": 1
+    }
+    {%- if reviews_list != blank -%}
+    ,"review": [
+      {%- for review in reviews_list limit: 5 -%}
+        {%- liquid
+          assign r_rating = 0
+          if review.rating != blank and review.rating.value != blank
+            assign r_rating = review.rating.value.rating | times: 1.0
+          endif
+        -%}
+        {
+          "@type": "Review",
+          "reviewRating": {
+            "@type": "Rating",
+            "ratingValue": {{ r_rating | round: 1 | json }},
+            "bestRating": {{ scale_max | json }},
+            "worstRating": 1
+          },
+          "author": {
+            "@type": "Person",
+            "name": {{ review.author_display_name | default: 'Anonymous' | json }}
+          }
+          {%- if review.body != blank -%}
+          ,"reviewBody": {{ review.body | json }}
+          {%- endif -%}
+          {%- if review.submitted_at != blank -%}
+          ,"datePublished": {{ review.submitted_at | date: '%Y-%m-%d' | json }}
+          {%- endif -%}
+        }{%- unless forloop.last -%},{%- endunless -%}
+      {%- endfor -%}
+    ]
+    {%- endif -%}
+  }
+  {%- endcapture -%}
+  <script type="application/ld+json">{{ cited_jsonld }}</script>
+{%- endif -%}

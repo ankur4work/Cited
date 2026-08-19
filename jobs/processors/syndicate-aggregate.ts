@@ -2,7 +2,12 @@ import type { Job } from 'bullmq';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import { ShopifyClient } from '@/lib/shopify/client';
-import { setProductRatingMetafields, MetaobjectError } from '@/lib/shopify/metaobjects';
+import {
+  setProductRatingMetafields,
+  setProductReviewList,
+  MetaobjectError,
+  REVIEW_LIST_LIMIT,
+} from '@/lib/shopify/metaobjects';
 import { recomputeProductAggregate } from '@/lib/reviews/aggregate';
 import type { SyndicationJobData, SyndicationJobName } from '../queue';
 
@@ -64,6 +69,27 @@ export async function syndicateAggregateProcessor(
         productGid: product.shopifyGid,
         ratingAvg: result.ratingAvg,
         ratingCount: result.ratingCount,
+      });
+
+      // The rating tells a shopper how many people liked this. The list is
+      // what lets the storefront show what any of them actually said, so it
+      // has to move in step with the aggregate — a product whose average
+      // updated but whose review list did not is showing a stale page.
+      const published = await prisma.review.findMany({
+        where: {
+          productId: product.id,
+          storeId,
+          status: 'PUBLISHED',
+          metaobjectGid: { not: null },
+        },
+        orderBy: { submittedAt: 'desc' },
+        take: REVIEW_LIST_LIMIT,
+        select: { metaobjectGid: true },
+      });
+
+      await setProductReviewList(client, {
+        productGid: product.shopifyGid,
+        metaobjectGids: published.map((r) => r.metaobjectGid!),
       });
     } catch (err) {
       if (err instanceof MetaobjectError && err.terminal) {

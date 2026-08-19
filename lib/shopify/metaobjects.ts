@@ -200,6 +200,75 @@ function isTerminalCode(code?: string, message?: string): boolean {
  * an ambiguous timeout updates the same record instead of creating a
  * duplicate review on the merchant's storefront.
  */
+/**
+ * How many review references a product's list metafield carries.
+ *
+ * This is the server-rendered first page, not the whole corpus. Shopify caps
+ * list metafields, and a product with thousands of reviews should not try to
+ * inline all of them into every page's HTML anyway — that trades the page
+ * weight problem for the JavaScript one. Older reviews are reachable through
+ * the app proxy.
+ */
+export const REVIEW_LIST_LIMIT = 25;
+
+const REVIEW_LIST_SET = /* GraphQL */ `
+  mutation CitedReviewList($metafields: [MetafieldsSetInput!]!) {
+    metafieldsSet(metafields: $metafields) {
+      metafields { id }
+      userErrors { field message code }
+    }
+  }
+`;
+
+/**
+ * Publish the product-to-reviews link the storefront reads.
+ *
+ * Shopify's `reviews` namespace carries ONLY rating and rating_count. There is
+ * no standard path from a product to its review metaobjects, so a theme has no
+ * way to render an individual review — which meant the block could show an
+ * average and never a single word of what anyone wrote.
+ *
+ * So the app maintains the link: an app-owned, storefront-readable list of
+ * product_review references, newest first. `$app:` scopes it to this app's
+ * reserved namespace, where no other app or merchant edit can collide with it.
+ */
+export async function setProductReviewList(
+  client: ShopifyClient,
+  input: { productGid: string; metaobjectGids: string[] },
+): Promise<void> {
+  const resp = await client.graphql<{
+    metafieldsSet: {
+      userErrors: Array<{ field: string[] | null; message: string; code?: string }>;
+    } | null;
+  }>(REVIEW_LIST_SET, {
+    metafields: [
+      {
+        ownerId: input.productGid,
+        namespace: '$app:cited',
+        key: 'reviews',
+        type: 'list.metaobject_reference',
+        value: JSON.stringify(input.metaobjectGids.slice(0, REVIEW_LIST_LIMIT)),
+      },
+    ],
+  });
+
+  if (!resp.data?.metafieldsSet) {
+    const message = resp.errors?.map((e) => e.message).join('; ') ?? 'metafieldsSet returned no data';
+    const denied = /access denied|required access/i.test(message);
+    throw new MetaobjectError(`review list: ${message}`, denied ? 'ACCESS_DENIED' : undefined, denied);
+  }
+
+  const errors = resp.data.metafieldsSet.userErrors ?? [];
+  if (errors.length > 0) {
+    const first = errors[0]!;
+    throw new MetaobjectError(
+      `review list: ${errors.map((e) => e.message).join('; ')}`,
+      first.code,
+      isTerminalCode(first.code, first.message),
+    );
+  }
+}
+
 export async function upsertReviewMetaobject(
   client: ShopifyClient,
   input: ReviewMetaobjectInput,
