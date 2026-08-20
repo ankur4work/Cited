@@ -118,11 +118,12 @@ export function getSetupSteps(
           ? 'The Cited Reviews block is live on your product pages, rendered server-side in Shopify’s own HTML.'
           : themeBlock === 'missing'
             ? 'Your product pages don’t render the block yet, so shoppers can’t see reviews. This takes one click in the theme editor.'
-            : // 'unknown' means the storefront is password protected and Cited
-              // was redirected to /password, NOT that the block is absent. The
-              // old copy read as "not done" and sent merchants to add a block
-              // they had already added, which the theme editor then refused.
-              'Cited can’t check this while your storefront is password protected. If reviews already appear on a product page, this step is done — the links below are only for adding it the first time.',
+            : // 'unknown' means the check could not reach the storefront — a
+              // password page, a redirect, a timeout. That is our problem, not
+              // the merchant's, and it does not belong in their setup
+              // checklist. The copy stays neutral and actionable: it neither
+              // claims the block is missing nor explains why we cannot tell.
+              'Show reviews on your product pages by adding the Cited Reviews block, or turn on the app embed to cover every product at once.',
       done: themeBlock === 'installed',
       action:
         themeBlock === 'installed'
@@ -142,7 +143,7 @@ export function getSetupSteps(
       hint:
         themeBlock === 'installed'
           ? undefined
-          : 'Easiest route: Theme settings → App embeds → turn on “Cited Reviews everywhere”. That covers every product with no placement step and no theme can refuse it. The links above place the block in one specific spot instead.',
+          : 'Or turn it on for every product at once: Theme settings → App embeds → Cited Reviews everywhere.',
     },
     {
       key: 'syndicate',
