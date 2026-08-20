@@ -33,8 +33,10 @@ export function ReviewsView({
    * click. SessionRecovery now repairs that case, but repairing it costs an
    * extra navigation, and the link already knows the answer.
    */
-  const params = useSearchParams();
-  const shop = params.get('shop');
+  // Optional-chained: useSearchParams can hand back null depending on how the
+  // route is rendered, and reading `.get` off that would crash the whole page
+  // to save a query parameter.
+  const shop = useSearchParams()?.get('shop') ?? null;
   const href = (status: ReviewStatusFilter) =>
     shop
       ? `/reviews?status=${status}&shop=${encodeURIComponent(shop)}`

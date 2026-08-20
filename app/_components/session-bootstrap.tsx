@@ -10,7 +10,12 @@ declare global {
      * App Bridge, loaded from Shopify's CDN. The single declaration for the
      * whole app — session-recovery.tsx reads `config.shop` from it too.
      */
-    shopify?: { idToken?: () => Promise<string>; config?: { shop?: string } };
+    shopify?: {
+      idToken?: () => Promise<string>;
+      config?: { shop?: string };
+      /** App Bridge toast — renders in the admin's chrome, needs no Frame. */
+      toast?: { show: (message: string, options?: { isError?: boolean; duration?: number }) => void };
+    };
   }
 }
 

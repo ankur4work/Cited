@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { BlockStack, Card, Checkbox, InlineStack, Text, Toast } from '@shopify/polaris';
+import { BlockStack, Card, Checkbox, InlineStack, Text } from '@shopify/polaris';
+import { showToast } from './toast';
 
 /**
  * Settings save on toggle rather than behind a Save button.
@@ -20,7 +21,6 @@ export function SettingsForm({
   const [pixel, setPixel] = useState(analyticsPixelEnabled);
   const [gdpr, setGdpr] = useState(gdprMode);
   const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState<{ message: string; error?: boolean } | null>(null);
 
   async function save(patch: { analyticsPixelEnabled?: boolean; gdprMode?: boolean }) {
     const previous = { pixel, gdpr };
@@ -38,11 +38,11 @@ export function SettingsForm({
         body: JSON.stringify(patch),
       });
       if (!res.ok) throw new Error(`save failed (${res.status})`);
-      setToast({ message: 'Saved' });
+      showToast('Saved');
     } catch (err) {
       setPixel(previous.pixel);
       setGdpr(previous.gdpr);
-      setToast({ message: (err as Error).message, error: true });
+      showToast((err as Error).message, { isError: true });
     } finally {
       setSaving(false);
     }
@@ -77,15 +77,6 @@ export function SettingsForm({
           </InlineStack>
         </BlockStack>
       </Card>
-
-      {toast && (
-        <Toast
-          content={toast.message}
-          error={toast.error}
-          onDismiss={() => setToast(null)}
-          duration={3000}
-        />
-      )}
     </>
   );
 }

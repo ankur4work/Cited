@@ -2,8 +2,9 @@
 
 import { useCallback, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Badge, BlockStack, Box, Button, InlineStack, Text, Toast } from '@shopify/polaris';
+import { Badge, BlockStack, Box, Button, InlineStack, Text } from '@shopify/polaris';
 import type { ReviewRow } from './review-rows';
+import { showToast } from './toast';
 
 export interface ModerationRow extends ReviewRow {
   syncError?: string | null;
@@ -28,7 +29,6 @@ const STATUS_TONE: Record<string, 'success' | 'attention' | 'critical' | undefin
 export function ReviewModeration({ reviews }: { reviews: ModerationRow[] }) {
   const router = useRouter();
   const [pendingId, setPendingId] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ message: string; error?: boolean } | null>(null);
 
   const moderate = useCallback(
     async (id: string, status: string) => {
@@ -47,10 +47,10 @@ export function ReviewModeration({ reviews }: { reviews: ModerationRow[] }) {
         });
         if (!res.ok) throw new Error(`request failed (${res.status})`);
 
-        setToast({ message: status === 'PUBLISHED' ? 'Review published' : 'Review updated' });
+        showToast(status === 'PUBLISHED' ? 'Review published' : 'Review updated');
         router.refresh();
       } catch (err) {
-        setToast({ message: (err as Error).message, error: true });
+        showToast((err as Error).message, { isError: true });
       } finally {
         setPendingId(null);
       }
@@ -141,15 +141,6 @@ export function ReviewModeration({ reviews }: { reviews: ModerationRow[] }) {
           </Box>
         ))}
       </BlockStack>
-
-      {toast && (
-        <Toast
-          content={toast.message}
-          error={toast.error}
-          onDismiss={() => setToast(null)}
-          duration={4000}
-        />
-      )}
     </>
   );
 }

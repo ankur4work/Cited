@@ -44,7 +44,7 @@ export function OverviewView({
   // The server identifies the store from `?shop=`, so an in-app link has to
   // carry it. Without this, "View all" landed on the recovery screen and cost
   // an extra round trip to get back to where the merchant already was.
-  const shop = useSearchParams().get('shop');
+  const shop = useSearchParams()?.get('shop') ?? null;
   const reviewsUrl = shop ? `/reviews?shop=${encodeURIComponent(shop)}` : '/reviews';
 
   return (
