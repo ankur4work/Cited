@@ -158,22 +158,29 @@
 
 .cited-reviews__form { display: grid; gap: var(--cited-gap); max-width: 34rem; }
 
-/*
- * Left as a block rather than a flex container: `legend` does not participate
- * in flex layout consistently across browsers, and the labels are already
- * inline-flex, so they wrap on their own line without needing it.
+/* ── Star rating input ──────────────────────────────────────────────
+ * Real stars, no JavaScript. The radios are visually hidden but stay
+ * focusable; each label IS a star. The row is reversed so the DOM runs 5→1
+ * while the shopper sees 1→5, which is what allows `:checked ~ label` to fill
+ * the chosen star and every lower one.
  */
-.cited-reviews__rating { border: 0; padding: 0; margin: 0; }
+.cited-rate { border: 0; padding: 0; margin: 0; }
 
-.cited-reviews__rating legend { padding: 0; margin-bottom: 6px; font-size: 0.875rem; }
+.cited-rate__legend { padding: 0; margin-bottom: 6px; font-size: 0.875rem; }
 
-.cited-reviews__rating-label { margin-right: 6px; }
+.cited-rate__stars {
+  display: flex;
+  flex-direction: row-reverse;
+  justify-content: flex-end;
+  gap: 2px;
+}
 
 /*
- * Visually hidden, not display:none — the radio must stay focusable and
- * reachable by keyboard, which display:none would remove from the tab order.
+ * Visually hidden, not display:none — the radio must stay focusable and in
+ * the tab order, which display:none would remove.
  */
-.cited-reviews__rating-input {
+.cited-rate__input,
+.cited-rate__sr {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -185,27 +192,42 @@
   border: 0;
 }
 
-.cited-reviews__rating-label {
-  display: inline-flex;
-  align-items: center;
-  padding: 6px 12px;
-  border: 1px solid var(--cited-border);
-  border-radius: var(--cited-radius);
-  font-size: 0.8125rem;
+.cited-rate__label {
   cursor: pointer;
+  line-height: 0;
+  color: var(--cited-border);
 }
 
-.cited-reviews__rating-input:checked + .cited-reviews__rating-label {
-  border-color: var(--cited-star);
-  box-shadow: inset 0 0 0 1px var(--cited-star);
-  font-weight: 600;
-}
+.cited-rate__label svg { display: block; fill: currentColor; }
 
-/* Focus must be visible on the label, since the input itself is off-screen. */
-.cited-reviews__rating-input:focus-visible + .cited-reviews__rating-label {
+/* The checked star and every one to its left (later in the DOM). */
+.cited-rate__input:checked ~ .cited-rate__label { color: var(--cited-star); }
+
+/* Same rule for hover, so the row previews the score under the cursor. */
+.cited-rate__stars:hover .cited-rate__label { color: var(--cited-border); }
+.cited-rate__label:hover,
+.cited-rate__label:hover ~ .cited-rate__label { color: var(--cited-star); }
+
+/* Focus has to show on the label, since the input itself is off-screen. */
+.cited-rate__input:focus-visible + .cited-rate__label {
   outline: 2px solid currentColor;
   outline-offset: 2px;
+  border-radius: 4px;
 }
+
+@media (prefers-reduced-motion: no-preference) {
+  .cited-rate__label { transition: color 100ms ease; }
+}
+
+.cited-reviews__as { margin: 0; font-size: 0.875rem; color: var(--cited-muted); }
+.cited-reviews__identity { display: grid; gap: var(--cited-gap); }
+.cited-reviews__field-label { font-weight: 500; }
+
+.cited-reviews__actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+.cited-reviews__status { margin: 0; font-size: 0.875rem; }
+.cited-reviews__status[data-tone='error'] { color: #b42318; }
+.cited-reviews__status[data-tone='ok'] { color: #0a7c42; }
 
 .cited-reviews__field { display: grid; gap: 4px; font-size: 0.875rem; }
 .cited-reviews__field small { color: var(--cited-muted); font-size: 0.75rem; }

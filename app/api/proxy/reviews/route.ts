@@ -86,16 +86,28 @@ async function readSubmission(req: NextRequest): Promise<{ fields: Submission; w
  * than believing the form. Failure is not fatal — the review is still accepted,
  * just without the elevated trust.
  */
-async function trustedEmailForCustomer(
+async function trustedCustomer(
   store: { id: string; shopDomain: string },
   customerId: string,
-): Promise<string | null> {
+): Promise<{ email: string | null; name: string | null } | null> {
   try {
-    const res = await new ShopifyClient(store).graphql<{ customer: { email: string | null } | null }>(
-      `query CitedProxyCustomer($id: ID!) { customer(id: $id) { email } }`,
+    const res = await new ShopifyClient(store).graphql<{
+      customer: { email: string | null; displayName: string | null; firstName: string | null } | null;
+    }>(
+      `query CitedProxyCustomer($id: ID!) {
+         customer(id: $id) { email displayName firstName }
+       }`,
       { id: `gid://shopify/Customer/${customerId}` },
     );
-    return res.data?.customer?.email?.toLowerCase() ?? null;
+    const customer = res.data?.customer;
+    if (!customer) return null;
+    return {
+      email: customer.email?.toLowerCase() ?? null,
+      // First name alone by preference: a review signed "Priya" reads like a
+      // person, and publishing a shopper's full surname next to a purchase is
+      // more than they agreed to when they created an account.
+      name: customer.firstName || customer.displayName || null,
+    };
   } catch (err) {
     logger.warn(
       { shop: store.shopDomain, err: (err as Error).message },
@@ -174,12 +186,16 @@ export async function POST(req: NextRequest) {
   }
 
   let email = fields.authorEmail || null;
+  let name = fields.authorName || null;
   let emailIsTrusted = false;
   if (context.loggedInCustomerId) {
-    const known = await trustedEmailForCustomer(store, context.loggedInCustomerId);
-    if (known) {
-      // Shopify's answer wins over anything typed into the form.
-      email = known;
+    const known = await trustedCustomer(store, context.loggedInCustomerId);
+    if (known?.email) {
+      // Shopify's answer wins over anything posted here. A signed-in shopper
+      // is not asked for their name or address at all, so this is also the
+      // only place those values can come from.
+      email = known.email;
+      name = known.name ?? name;
       emailIsTrusted = true;
     }
   }
@@ -191,7 +207,7 @@ export async function POST(req: NextRequest) {
       rating: fields.rating,
       title: fields.title || null,
       body: fields.body || null,
-      authorName: fields.authorName || null,
+      authorName: name,
       authorEmail: email,
       emailIsTrusted,
       ip: req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
@@ -210,8 +226,24 @@ export async function POST(req: NextRequest) {
       'Storefront review submitted',
     );
 
+    // The rendered review comes back with the response so the page can show it
+    // immediately. Syndication to Shopify is queued and takes a moment, and
+    // the product metafield the block reads from will not have caught up yet —
+    // so without this the shopper submits and appears to have changed nothing.
+    //
+    // Only what is already public: no email, no IP, no fraud score.
+    const rendered = pending
+      ? null
+      : {
+          rating: review.rating,
+          body: review.body,
+          author: review.authorName || null,
+          submittedAt: review.submittedAt.toISOString(),
+          verified: review.verification === 'VERIFIED_BUYER',
+        };
+
     return wantsJson
-      ? NextResponse.json({ ok: true, pending, message })
+      ? NextResponse.json({ ok: true, pending, message, review: rendered })
       : liquidResponse(200, 'Thanks for your review', message, fields.returnPath);
   } catch (err) {
     if (err instanceof DuplicateReviewError) {
