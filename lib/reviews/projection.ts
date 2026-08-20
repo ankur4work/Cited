@@ -57,7 +57,7 @@ export interface ProjectableReview {
   sourceLabel: string;
   status: ReviewStatus;
   product: { shopifyGid: string };
-  media: Array<{ r2Key: string }>;
+  media: Array<{ r2Key: string; url?: string | null }>;
 }
 
 const VERIFICATION_MAP: Record<VerificationStatus, AppVerificationStatus> = {
@@ -100,8 +100,11 @@ export function expectedPublishableStatus(review: {
 }
 
 export function reviewMetaobjectInput(review: ProjectableReview): ReviewMetaobjectInput {
+  // An absolute URL wins over a derived one: Shopify Files hands back a CDN
+  // URL we cannot rebuild from a key, so a stored url means the object does
+  // not live in our bucket at all.
   const mediaUrls = review.media
-    .map((m) => mediaPublicUrl(m.r2Key))
+    .map((m) => m.url ?? mediaPublicUrl(m.r2Key))
     .filter((u): u is string => u !== null);
 
   return {

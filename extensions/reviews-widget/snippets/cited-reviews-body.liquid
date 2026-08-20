@@ -263,11 +263,30 @@
     <div class="cited-reviews__form-wrap">
       <h3 class="cited-reviews__form-heading">{{ form_heading | escape }}</h3>
 
+      {%- comment -%}
+        Reviews require an account. The form is hidden from signed-out
+        visitors, but the server is the gate — anything a signed-out shopper
+        tells us about themselves is unverifiable, which makes one-review-per-
+        customer unenforceable and "verified purchase" meaningless.
+
+        `return_url` brings them back to the product they were reading rather
+        than dumping them in their account page.
+      {%- endcomment -%}
+      {%- unless customer -%}
+        <div class="cited-reviews__signin">
+          <p>Only customers with an account can write a review.</p>
+          <a class="cited-reviews__submit" href="/account/login?return_url={{ product.url | url_encode }}">
+            Sign in to write a review
+          </a>
+        </div>
+      {%- else -%}
+
       <form
         class="cited-reviews__form"
         method="post"
         action="/apps/cited/reviews"
         accept-charset="UTF-8"
+        enctype="multipart/form-data"
         data-cited-form
       >
         <input type="hidden" name="product_id" value="{{ product.id }}">
@@ -325,28 +344,31 @@
         </label>
 
         {%- comment -%}
-          A signed-in shopper is never asked who they are — Shopify already
-          knows, and the app looks the address up server-side rather than
-          trusting anything posted here. Only a logged-out visitor sees these
-          fields, and what they type is treated as an unverified claim.
+          Photos are optional and go to the merchant's own Shopify Files. The
+          input accepts images only and is capped server-side at four; the
+          attribute here is a courtesy to the file picker, not the limit.
         {%- endcomment -%}
-        {%- if customer -%}
-          <p class="cited-reviews__as">
-            Posting as <strong>{{ customer.name | escape }}</strong>
-          </p>
-        {%- else -%}
-          <div class="cited-reviews__identity">
-            <label class="cited-reviews__field">
-              <span class="cited-reviews__field-label">Name</span>
-              <input type="text" name="author_name" maxlength="100" autocomplete="name">
-            </label>
-            <label class="cited-reviews__field">
-              <span class="cited-reviews__field-label">Email</span>
-              <input type="email" name="author_email" maxlength="254" autocomplete="email" required>
-              <small>Never published. Used to match your order and to contact you about this review.</small>
-            </label>
-          </div>
+        {%- if show_media -%}
+          <label class="cited-reviews__field cited-reviews__photos">
+            <span class="cited-reviews__field-label">Photos <span class="cited-reviews__optional">optional</span></span>
+            <input
+              type="file"
+              name="photos"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              multiple
+            >
+            <small>Up to 4 images, 5 MB each.</small>
+          </label>
         {%- endif -%}
+
+        {%- comment -%}
+          The shopper is never asked who they are. Shopify already knows, and
+          the app resolves the name and address server-side from the customer
+          id the proxy signs — which is the only version of it worth trusting.
+        {%- endcomment -%}
+        <p class="cited-reviews__as">
+          Posting as <strong>{{ customer.first_name | default: customer.name | escape }}</strong>
+        </p>
 
         {%- comment -%}
           Honeypot. Hidden from people by CSS and from screen readers by
@@ -362,6 +384,7 @@
           <p class="cited-reviews__status" data-cited-status role="status" aria-live="polite"></p>
         </div>
       </form>
+      {%- endunless -%}
     </div>
   {%- endif -%}
 </section>

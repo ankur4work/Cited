@@ -33,7 +33,7 @@ export async function syndicateReviewProcessor(
       media: {
         where: { moderation: 'APPROVED' },
         orderBy: { position: 'asc' },
-        select: { r2Key: true, type: true },
+        select: { r2Key: true, url: true, type: true },
       },
       store: {
         select: {

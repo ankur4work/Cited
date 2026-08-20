@@ -37,6 +37,18 @@
       .replace(/"/g, '&quot;');
   }
 
+  function photosHtml(photos) {
+    if (!photos || !photos.length) return '';
+    var html = '<div class="cited-review__media">';
+    for (var i = 0; i < photos.length && i < 4; i++) {
+      // Shopify CDN URLs only — the server produced these, not the page.
+      html +=
+        '<img class="cited-review__media-item" src="' + escapeHtml(photos[i]) +
+        '" alt="Customer review photo" loading="lazy" decoding="async" width="88" height="88">';
+    }
+    return html + '</div>';
+  }
+
   function renderReview(review) {
     var name = review.author || 'Anonymous';
     var li = document.createElement('li');
@@ -53,7 +65,8 @@
       '</div>' +
       (review.body
         ? '<div class="cited-review__body">' + escapeHtml(review.body) + '</div>'
-        : '');
+        : '') +
+      photosHtml(review.photos);
     return li;
   }
 

@@ -220,8 +220,31 @@
 }
 
 .cited-reviews__as { margin: 0; font-size: 0.875rem; color: var(--cited-muted); }
-.cited-reviews__identity { display: grid; gap: var(--cited-gap); }
 .cited-reviews__field-label { font-weight: 500; }
+
+.cited-reviews__optional { font-weight: 400; color: var(--cited-muted); }
+
+.cited-reviews__photos input[type='file'] {
+  font: inherit;
+  font-size: 0.875rem;
+  padding: 8px;
+  border: 1px dashed var(--cited-border);
+  border-radius: var(--cited-radius);
+  background: transparent;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.cited-reviews__signin {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  font-size: 0.875rem;
+  color: var(--cited-muted);
+}
+
+.cited-reviews__signin p { margin: 0; }
+.cited-reviews__signin a { text-decoration: none; }
 
 .cited-reviews__actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 

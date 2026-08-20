@@ -9,6 +9,12 @@ import {
   DuplicateReviewError,
   ReviewValidationError,
 } from '@/lib/reviews/create';
+import {
+  uploadReviewImage,
+  ALLOWED_IMAGE_TYPES,
+  MAX_IMAGE_BYTES,
+  MAX_IMAGES_PER_REVIEW,
+} from '@/lib/shopify/files';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -45,13 +51,16 @@ interface Submission {
   returnPath: string;
 }
 
-async function readSubmission(req: NextRequest): Promise<{ fields: Submission; wantsJson: boolean }> {
+async function readSubmission(
+  req: NextRequest,
+): Promise<{ fields: Submission; wantsJson: boolean; photos: File[] }> {
   const contentType = req.headers.get('content-type') ?? '';
   const wantsJson =
     contentType.includes('application/json') ||
     (req.headers.get('accept') ?? '').includes('application/json');
 
   let get: (key: string) => string;
+  const photos: File[] = [];
   if (contentType.includes('application/json')) {
     const parsed = (await req.json().catch(() => ({}))) as Record<string, unknown>;
     get = (key) => (typeof parsed[key] === 'string' ? (parsed[key] as string) : String(parsed[key] ?? ''));
@@ -61,10 +70,19 @@ async function readSubmission(req: NextRequest): Promise<{ fields: Submission; w
       const value = form.get(key);
       return typeof value === 'string' ? value : '';
     };
+    // Capped here rather than later: an unbounded loop over attacker-supplied
+    // parts is the cost, not the upload itself. Empty parts are what a browser
+    // sends for an untouched file input.
+    for (const entry of form.getAll('photos')) {
+      if (entry instanceof File && entry.size > 0 && photos.length < MAX_IMAGES_PER_REVIEW) {
+        photos.push(entry);
+      }
+    }
   }
 
   return {
     wantsJson,
+    photos,
     fields: {
       productId: get('product_id').trim(),
       rating: Number.parseInt(get('rating'), 10),
@@ -117,6 +135,71 @@ async function trustedCustomer(
   }
 }
 
+/**
+ * Store review photos in the merchant's Shopify Files and record them.
+ *
+ * Never throws. The review is already committed by the time this runs, and a
+ * storage problem is not a reason to tell someone their review failed — they
+ * would resubmit, hit the one-per-product constraint, and conclude the app is
+ * broken. Failures are logged; what uploaded is kept.
+ */
+async function attachPhotos(
+  store: { id: string; shopDomain: string },
+  reviewId: string,
+  photos: File[],
+): Promise<string[]> {
+  if (photos.length === 0) return [];
+
+  const client = new ShopifyClient(store);
+  const urls: string[] = [];
+  let position = 0;
+
+  for (const photo of photos.slice(0, MAX_IMAGES_PER_REVIEW)) {
+    if (!ALLOWED_IMAGE_TYPES.includes(photo.type) || photo.size > MAX_IMAGE_BYTES) {
+      logger.info(
+        { shop: store.shopDomain, reviewId, type: photo.type, size: photo.size },
+        'Review photo rejected before upload',
+      );
+      continue;
+    }
+
+    try {
+      const uploaded = await uploadReviewImage(client, {
+        filename: photo.name,
+        mimeType: photo.type,
+        bytes: Buffer.from(await photo.arrayBuffer()),
+      });
+
+      await prisma.reviewMedia.create({
+        data: {
+          storeId: store.id,
+          reviewId,
+          type: 'IMAGE',
+          // The GID is the durable handle; the URL can still be resolved from
+          // it if Shopify was mid-processing when we asked.
+          r2Key: uploaded.fileGid,
+          url: uploaded.url,
+          width: uploaded.width,
+          height: uploaded.height,
+          bytes: BigInt(photo.size),
+          mimeType: photo.type,
+          moderation: 'APPROVED',
+          position: position++,
+        },
+      });
+
+      if (uploaded.url) urls.push(uploaded.url);
+    } catch (err) {
+      logger.error(
+        { shop: store.shopDomain, reviewId, err: (err as Error).message },
+        'Review photo upload failed — review kept without it',
+      );
+    }
+  }
+
+  return urls;
+}
+
 /** Rendered by Shopify inside the merchant's own theme layout. */
 function liquidResponse(status: number, heading: string, message: string, returnPath: string) {
   const back = returnPath.startsWith('/') ? returnPath : '/';
@@ -148,7 +231,23 @@ export async function POST(req: NextRequest) {
   const limit = await publicRateLimit(req, 'review-submit');
   if (!limit.ok) return limit.response;
 
-  const { fields, wantsJson } = await readSubmission(req);
+  const { fields, wantsJson, photos } = await readSubmission(req);
+
+  /*
+   * Reviews require a customer account.
+   *
+   * The theme hides the form from signed-out visitors, but the form is not the
+   * gate — this is. Everything a signed-out shopper could tell us about
+   * themselves is an unverifiable claim, which makes "one review per customer"
+   * unenforceable, "verified purchase" meaningless, and photo upload an open
+   * door to anyone who finds this URL.
+   */
+  if (!context.loggedInCustomerId) {
+    const message = 'Please sign in to your account to write a review.';
+    return wantsJson
+      ? NextResponse.json({ error: message, requiresLogin: true }, { status: 401 })
+      : liquidResponse(401, 'Sign in to review', message, fields.returnPath);
+  }
 
   // Honeypot: a field no human sees and every naive bot fills. Answered with
   // the same success surface a real submission gets, so the bot cannot tell it
@@ -216,6 +315,12 @@ export async function POST(req: NextRequest) {
       sourceLabel: 'cited:storefront',
     });
 
+    // Photos are attached after the review exists, and a failure here never
+    // costs the shopper their words: the review is already saved, so a photo
+    // that will not upload is logged and dropped rather than rolled back into
+    // "your review could not be saved".
+    const photoUrls = await attachPhotos(store, review.id, photos);
+
     const pending = review.status !== 'PUBLISHED';
     const message = pending
       ? 'Thanks — your review has been sent to the store for approval.'
@@ -240,6 +345,7 @@ export async function POST(req: NextRequest) {
           author: review.authorName || null,
           submittedAt: review.submittedAt.toISOString(),
           verified: review.verification === 'VERIFIED_BUYER',
+          photos: photoUrls,
         };
 
     return wantsJson

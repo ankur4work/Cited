@@ -156,7 +156,7 @@ async function findOwnedReview(input: {
     media: {
       where: { moderation: 'APPROVED' as const },
       orderBy: { position: 'asc' as const },
-      select: { r2Key: true },
+      select: { r2Key: true, url: true },
     },
   };
 

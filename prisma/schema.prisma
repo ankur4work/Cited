@@ -474,6 +474,10 @@ model ReviewMedia {
   /// Object key in Cloudflare R2. Zero-egress is why R2 and not S3 —
   /// media bandwidth is the largest variable cost line (PLAN.md §5.4.2).
   r2Key       String
+  /// Absolute URL, for media we did not store ourselves. Shopify Files hands
+  /// back a CDN URL that cannot be rebuilt from a key, so it has to be kept.
+  /// Null for R2-backed rows, whose URL is derived from r2Key.
+  url         String?
   posterKey   String?
   width       Int?
   height      Int?

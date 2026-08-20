@@ -30,7 +30,11 @@ embedded = true
 # to maintain the `reviews.rating` / `reviews.rating_count` product metafields,
 # and `metafieldsSet` requires the same access as mutating the owner resource.
 # Read access returned ACCESS_DENIED and no rating ever reached Shopify.
-scopes = "write_products,read_orders,read_customers,read_metaobjects,write_product_reviews"
+#
+# `write_files` stores review photos in the merchant's own Shopify Files rather
+# than a bucket of ours. No third-party account, no credentials to leak, no
+# egress bill — and a merchant who uninstalls keeps their shoppers' photos.
+scopes = "write_products,read_orders,read_customers,read_metaobjects,write_product_reviews,write_files"
 use_legacy_install_flow = false
 
 [auth]

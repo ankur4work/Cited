@@ -13,17 +13,22 @@ describe('missingScopes', () => {
 
   it('catches the grant that shipped before write_products was requested', () => {
     // The exact scope string Shopify had on record, which quietly failed every
-    // rating metafield write.
+    // rating metafield write. Asserted with toContain rather than an exact
+    // list so that adding a scope to the app does not fail this test for the
+    // wrong reason — what matters is that the shortfall is detected at all.
     expect(
       missingScopes('read_customers,read_metaobjects,read_orders,read_products,write_product_reviews'),
-    ).toEqual(['write_products']);
+    ).toContain('write_products');
   });
 
   it('treats a write grant as satisfying a read requirement', () => {
     // Guards the loop: if write_products did not satisfy a read_products
     // requirement, a merchant who granted everything would be sent back to the
-    // authorize screen on every single page load.
-    const granted = 'write_products,write_orders,write_customers,write_metaobjects,write_product_reviews';
+    // authorize screen on every single page load. Derived from APP_SCOPES so
+    // it keeps testing the implication rule as the scope list grows.
+    const granted = APP_SCOPES.split(',')
+      .map((s) => s.trim().replace(/^read_/, 'write_'))
+      .join(',');
     expect(missingScopes(granted)).toEqual([]);
   });
 
