@@ -12,6 +12,7 @@ import {
   Page,
   Text,
 } from '@shopify/polaris';
+import { useSearchParams } from 'next/navigation';
 import type { DashboardOverview, SetupStep } from '@/lib/dashboard';
 import { StatTile } from './stat-tile';
 import { SetupChecklist } from './setup-checklist';
@@ -39,6 +40,12 @@ export function OverviewView({
   recent: ReviewRow[];
 }) {
   const setupComplete = steps.every((s) => s.done);
+
+  // The server identifies the store from `?shop=`, so an in-app link has to
+  // carry it. Without this, "View all" landed on the recovery screen and cost
+  // an extra round trip to get back to where the merchant already was.
+  const shop = useSearchParams().get('shop');
+  const reviewsUrl = shop ? `/reviews?shop=${encodeURIComponent(shop)}` : '/reviews';
 
   return (
     <Page
@@ -110,7 +117,7 @@ export function OverviewView({
                 <Text as="h2" variant="headingMd">
                   Latest reviews
                 </Text>
-                <Link url="/reviews">View all</Link>
+                <Link url={reviewsUrl}>View all</Link>
               </InlineStack>
             </Box>
             {recent.length === 0 ? (
