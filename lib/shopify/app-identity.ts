@@ -41,7 +41,7 @@ export const APP_HOST = 'cited.solnix.store';
  * and to Google. Write implies read, so nothing else needed widening.
  */
 export const APP_SCOPES =
-  'write_products,read_orders,read_customers,read_metaobjects,write_product_reviews,write_files';
+  'write_products,read_orders,read_customers,read_metaobjects,write_product_reviews,write_files,read_themes';
 
 /**
  * Scopes this app needs that a token does not carry.

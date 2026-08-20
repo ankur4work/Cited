@@ -1,18 +1,25 @@
 import { logger } from './logger';
 import { prisma } from './prisma';
+import { ShopifyClient } from './shopify/client';
 
 /**
  * Theme app block: placement and detection.
  *
- * Cited cannot add the block itself. Writing into a theme needs
- * `read_themes`/`write_themes`, which this app deliberately does not request —
- * app blocks are placed by the merchant in the theme editor, and asking for
- * theme write access to automate one click would widen the app's blast radius
- * over every merchant's live storefront.
+ * Cited does not write to themes. Placement is the merchant's, through the
+ * theme editor or a single App embeds toggle — asking for `write_themes` to
+ * automate one click would give this app edit access to every merchant's live
+ * storefront, which is not a trade worth making for a convenience.
  *
- * So the app does the two things it can: send the merchant straight to the
- * right editor screen with the block preselected, and then verify from the
- * public storefront whether the block actually renders.
+ * Detection is a different question, and it used to be answered by fetching a
+ * product page and looking for our markup. That is honest but blind: a
+ * password-protected storefront answers 302 to /password, so the check could
+ * never do better than "unknown" — and the setup step stayed grey no matter
+ * what the merchant did. It also cannot see an app embed that is present but
+ * toggled off.
+ *
+ * So detection reads the theme itself. `read_themes` is read-only and cannot
+ * modify anything; it answers the question directly rather than inferring it
+ * from a page that may not be reachable.
  */
 
 /** Must match `uid` in extensions/reviews-widget/shopify.extension.toml. */
@@ -31,20 +38,13 @@ export const REVIEW_BLOCK_HANDLE = 'reviews';
  * shows "There is a problem with the app block. Contact the app developer.",
  * which reads like our bug and isn't.
  *
- * `newAppsSection` sidesteps that by creating a section of its own. Placement
- * is less precise — it lands after the product section rather than inside it,
- * and the merchant drags it where they want — but it does not depend on the
- * theme cooperating.
+ * `newAppsSection` sidesteps that by creating a section of its own.
  */
 export type ThemeEditorTarget = 'mainSection' | 'newAppsSection';
 
 /**
  * Deep link that opens the theme editor on the product template with our block
  * ready to place.
- *
- * `template=product` picks the product template and `addAppBlockId` preselects
- * the block. If the editor cannot place it, it still opens the right template,
- * so the worst case is the merchant adding it by hand instead of a dead end.
  */
 export function themeEditorDeepLink(
   shopDomain: string,
@@ -52,8 +52,7 @@ export function themeEditorDeepLink(
 ): string {
   // Built by hand rather than with URLSearchParams, which percent-encodes the
   // separator in `{uuid}/{handle}` to %2F. Shopify's editor expects a literal
-  // slash there; encoded, it fails to resolve the block and the merchant lands
-  // on the template with nothing preselected.
+  // slash there; encoded, it fails to resolve the block.
   //
   // Nothing here is user input — both values are module constants — so there
   // is no injection surface to encode against.
@@ -67,46 +66,121 @@ export function themeEditorDeepLink(
 
 export type ThemeBlockStatus = 'installed' | 'missing' | 'unknown';
 
+const THEME_FILES = /* GraphQL */ `
+  query CitedThemeFiles($filenames: [String!]!) {
+    themes(first: 1, roles: [MAIN]) {
+      nodes {
+        id
+        files(filenames: $filenames, first: 10) {
+          nodes {
+            filename
+            body {
+              ... on OnlineStoreThemeFileBodyText {
+                content
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+interface ThemeFilesResponse {
+  themes: {
+    nodes: Array<{
+      id: string;
+      files: { nodes: Array<{ filename: string; body: { content?: string } | null }> };
+    }>;
+  } | null;
+}
+
 /**
- * Is the block actually on the storefront?
+ * Is Cited actually rendering on this store's product pages?
  *
- * Detected by fetching a real product page and looking for the attribute the
- * block renders. This is deliberately an outside-in check: it answers "does a
- * shopper see reviews", which is the only version of the question that matters,
- * and it needs no theme permissions at all.
+ * Answers 'installed' when EITHER route is live:
+ *   * the app embed is switched on in theme settings, or
+ *   * the app block is placed in a product template
  *
- * Returns 'unknown' rather than guessing when the storefront is password
- * protected or unreachable — a development store is usually locked, and
- * reporting "not installed" there would be a lie a merchant can't act on.
+ * Both carry the extension's uid inside the block `type`, which is what makes
+ * one substring search sufficient for either.
+ *
+ * Returns 'unknown' rather than guessing when the theme cannot be read at all
+ * — no scope, an API failure — because reporting "missing" on a store that is
+ * working is worse than admitting we do not know.
  */
 export async function checkThemeBlock(
   storeId: string,
   shopDomain: string,
 ): Promise<ThemeBlockStatus> {
-  const product = await prisma.product.findFirst({
-    where: { storeId, status: 'ACTIVE' },
-    select: { handle: true },
-    orderBy: { createdAt: 'asc' },
+  const store = await prisma.store.findUnique({
+    where: { id: storeId },
+    select: { id: true, shopDomain: true },
   });
-  if (!product?.handle) return 'unknown';
+  if (!store) return 'unknown';
 
   try {
-    const res = await fetch(`https://${shopDomain}/products/${product.handle}`, {
-      redirect: 'manual',
-      signal: AbortSignal.timeout(4000),
-      headers: { 'User-Agent': 'Cited/1.0 (+theme block check)' },
+    const res = await new ShopifyClient(store).graphql<ThemeFilesResponse>(THEME_FILES, {
+      filenames: ['config/settings_data.json', 'templates/product.json'],
     });
 
-    // 30x is the password page; 401/403 likewise. Not evidence either way.
-    if (res.status >= 300) return 'unknown';
+    const theme = res.data?.themes?.nodes?.[0];
+    if (!theme) {
+      logger.debug({ shop: shopDomain }, 'Theme check: no main theme returned');
+      return 'unknown';
+    }
 
-    const html = await res.text();
-    return html.includes('data-cited-product') ? 'installed' : 'missing';
+    for (const file of theme.files.nodes) {
+      const content = file.body?.content;
+      if (!content) continue;
+
+      if (file.filename === 'config/settings_data.json') {
+        if (appEmbedEnabled(content)) return 'installed';
+        continue;
+      }
+
+      // A template carries the block only when it is actually placed, so the
+      // uid appearing at all is the answer.
+      if (content.includes(THEME_EXTENSION_UUID)) return 'installed';
+    }
+
+    return 'missing';
   } catch (err) {
     logger.debug(
       { shop: shopDomain, err: (err as Error).message },
-      'Theme block check failed — reporting unknown',
+      'Theme check failed — reporting unknown',
     );
     return 'unknown';
   }
+}
+
+/**
+ * Is our app embed present AND switched on?
+ *
+ * Shopify keeps disabled embeds in settings_data.json with `"disabled": true`
+ * rather than removing them, so a substring match alone would call a
+ * toggled-off embed installed — and the merchant would be told the step was
+ * done while their storefront showed nothing.
+ */
+function appEmbedEnabled(settingsJson: string): boolean {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(settingsJson);
+  } catch {
+    // A theme may leave comments or trailing commas in settings_data.json.
+    // Fall back to the substring, accepting that it cannot see `disabled`.
+    return settingsJson.includes(THEME_EXTENSION_UUID);
+  }
+
+  const blocks = (parsed as { current?: { blocks?: Record<string, unknown> } })?.current?.blocks;
+  if (!blocks || typeof blocks !== 'object') return false;
+
+  return Object.values(blocks).some((block) => {
+    const entry = block as { type?: unknown; disabled?: unknown };
+    return (
+      typeof entry.type === 'string' &&
+      entry.type.includes(THEME_EXTENSION_UUID) &&
+      entry.disabled !== true
+    );
+  });
 }

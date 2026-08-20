@@ -118,12 +118,9 @@ export function getSetupSteps(
           ? 'The Cited Reviews block is live on your product pages, rendered server-side in Shopify’s own HTML.'
           : themeBlock === 'missing'
             ? 'Your product pages don’t render the block yet, so shoppers can’t see reviews. This takes one click in the theme editor.'
-            : // 'unknown' means the check could not reach the storefront — a
-              // password page, a redirect, a timeout. That is our problem, not
-              // the merchant's, and it does not belong in their setup
-              // checklist. The copy stays neutral and actionable: it neither
-              // claims the block is missing nor explains why we cannot tell.
-              'Show reviews on your product pages by adding the Cited Reviews block, or turn on the app embed to cover every product at once.',
+            : // 'unknown' now means the theme itself could not be read, which
+              // is rare. Nothing about why belongs in a merchant's checklist.
+              'Add the Cited Reviews block to your product template, or turn on the app embed to cover every product at once.',
       done: themeBlock === 'installed',
       action:
         themeBlock === 'installed'
@@ -140,10 +137,12 @@ export function getSetupSteps(
               label: 'Add as its own section',
               url: themeEditorDeepLink(store.shopDomain, 'newAppsSection'),
             },
+      // The description already offers the embed; repeating the sentence here
+      // read as two different instructions. This says only WHERE it is.
       hint:
         themeBlock === 'installed'
           ? undefined
-          : 'Or turn it on for every product at once: Theme settings → App embeds → Cited Reviews everywhere.',
+          : 'App embed: Theme settings → App embeds → Cited Reviews everywhere.',
     },
     {
       key: 'syndicate',

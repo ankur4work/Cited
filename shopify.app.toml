@@ -34,7 +34,13 @@ embedded = true
 # `write_files` stores review photos in the merchant's own Shopify Files rather
 # than a bucket of ours. No third-party account, no credentials to leak, no
 # egress bill — and a merchant who uninstalls keeps their shoppers' photos.
-scopes = "write_products,read_orders,read_customers,read_metaobjects,write_product_reviews,write_files"
+#
+# `read_themes` is READ ONLY and is what lets the setup checklist tell the
+# truth. Detection used to fetch a product page, which a password-protected
+# storefront redirects — so the step stayed grey however the merchant set it
+# up, and a disabled app embed looked identical to an enabled one. Note this
+# is deliberately not `write_themes`: Cited never edits a merchant's theme.
+scopes = "write_products,read_orders,read_customers,read_metaobjects,write_product_reviews,write_files,read_themes"
 use_legacy_install_flow = false
 
 [auth]
