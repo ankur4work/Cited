@@ -271,11 +271,16 @@
 
         `return_url` brings them back to the product they were reading rather
         than dumping them in their account page.
+
+        `routes.account_login_url`, not a hardcoded /account/login: the path
+        differs on stores using new customer accounts and on any store with a
+        locale prefix, where the literal path 404s or drops the shopper into
+        the wrong locale. Shopify resolves the right one per store.
       {%- endcomment -%}
       {%- unless customer -%}
         <div class="cited-reviews__signin">
           <p>Only customers with an account can write a review.</p>
-          <a class="cited-reviews__submit" href="/account/login?return_url={{ product.url | url_encode }}">
+          <a class="cited-reviews__submit" href="{{ routes.account_login_url }}?return_url={{ product.url | url_encode }}">
             Sign in to write a review
           </a>
         </div>
