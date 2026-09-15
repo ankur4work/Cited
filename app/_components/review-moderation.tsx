@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Badge, BlockStack, Box, Button, InlineStack, Text } from '@shopify/polaris';
 import type { ReviewRow } from './review-rows';
 import { showToast } from './toast';
+import { ReviewReply } from './review-reply';
 
 export interface ModerationRow extends ReviewRow {
   syncError?: string | null;
@@ -137,6 +138,17 @@ export function ReviewModeration({ reviews }: { reviews: ModerationRow[] }) {
                   </Button>
                 )}
               </InlineStack>
+
+              {/*
+                Replying is only meaningful on a review a shopper can actually
+                see. Offering it on a hidden or spam row invites a merchant to
+                write a considered answer to something that will never be
+                published — the reply would save, syndicate as a DRAFT, and
+                appear to have vanished.
+              */}
+              {review.status === 'PUBLISHED' && (
+                <ReviewReply reviewId={review.id} reply={review.merchantReply} />
+              )}
             </BlockStack>
           </Box>
         ))}

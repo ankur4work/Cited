@@ -8,6 +8,7 @@ import {
   MetaobjectError,
 } from '@/lib/shopify/metaobjects';
 import { reviewMetaobjectInput, shouldHaveMetaobject } from '@/lib/reviews/projection';
+import { enqueueReviewTranslation } from '../enqueue';
 import type { SyndicationJobData, SyndicationJobName } from '../queue';
 
 /**
@@ -106,6 +107,22 @@ export async function syndicateReviewProcessor(
     });
 
     logger.info({ storeId, reviewId, metaobjectGid }, 'Review syndicated');
+
+    // Translations attach to the metaobject, so this is the earliest point one
+    // can be registered. The job decides for itself whether the store is
+    // entitled, whether the shop has other published locales, and whether this
+    // review already has them — enqueueing is cheap and keeps that decision in
+    // one place rather than duplicated here.
+    try {
+      await enqueueReviewTranslation({ storeId, reviewId });
+    } catch (err) {
+      // Syndication succeeded. A queue blip must not fail the job and cause a
+      // retry that re-upserts a metaobject which is already correct.
+      logger.warn(
+        { storeId, reviewId, err: (err as Error).message },
+        'Syndicated but translation could not be queued',
+      );
+    }
   } catch (err) {
     const message = (err as Error).message.slice(0, 500);
     const terminal = err instanceof MetaobjectError && err.terminal;

@@ -376,6 +376,24 @@ export async function enqueueMediaBackfill(input: {
   );
 }
 
+/**
+ * Translate a review into the shop's other published locales.
+ *
+ * Keyed by review so repeated syndications of the same review collapse into
+ * one job. Deliberately not delayed: the metaobject exists by the time this is
+ * enqueued, which is the only precondition — translations attach to it.
+ */
+export async function enqueueReviewTranslation(input: {
+  storeId: string;
+  reviewId: string;
+}): Promise<void> {
+  await aiQueue.add(
+    'ai:translate-review',
+    { storeId: input.storeId, reviewId: input.reviewId },
+    { jobId: `ai:translate:${input.reviewId}` },
+  );
+}
+
 /** Regenerate a product's AI review summary. Debounced per product. */
 export async function enqueueProductSummary(input: {
   storeId: string;

@@ -28,6 +28,7 @@ export const REVIEW_PROJECTION_SELECT = {
   orderShopifyGid: true,
   variantShopifyGid: true,
   merchantReply: true,
+  merchantRepliedAt: true,
   language: true,
   submittedAt: true,
   publishedAt: true,
@@ -50,6 +51,7 @@ export interface ProjectableReview {
   orderShopifyGid: string | null;
   variantShopifyGid: string | null;
   merchantReply: string | null;
+  merchantRepliedAt: Date | null;
   language: string;
   submittedAt: Date;
   publishedAt: Date | null;
@@ -128,6 +130,7 @@ export function reviewMetaobjectInput(review: ProjectableReview): ReviewMetaobje
     orderGid: review.orderShopifyGid,
     variantGid: review.variantShopifyGid,
     merchantReply: review.merchantReply,
+    merchantRepliedAt: review.merchantRepliedAt,
     language: review.language,
     mediaUrls,
     publishedAt: review.status === 'PUBLISHED' ? review.publishedAt : null,

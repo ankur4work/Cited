@@ -134,7 +134,11 @@ export const importQueue = new Queue<ImportJobData, unknown, 'import:process'>(Q
 });
 
 // ── AI ───────────────────────────────────────────────────────
-export type AiJobName = 'ai:summarize-product' | 'ai:moderate-review' | 'ai:mine-insights';
+export type AiJobName =
+  | 'ai:summarize-product'
+  | 'ai:translate-review'
+  | 'ai:moderate-review'
+  | 'ai:mine-insights';
 
 export interface AiJobData {
   storeId: string;

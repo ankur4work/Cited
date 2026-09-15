@@ -410,6 +410,15 @@ model Review {
 
   language String @default("en")
 
+  /// Locales this review has been translated into and registered with Shopify.
+  ///
+  /// Tracked here rather than read back from Shopify because the check runs on
+  /// every syndication: asking the Admin API "is this already translated?" for
+  /// every review on every sync would cost far more than remembering the answer.
+  /// Cleared when the text changes, since a translation of superseded wording is
+  /// worse than none — Shopify's digest check would reject it anyway.
+  translatedLocales String[] @default([])
+
   submittedAt DateTime  @default(now())
   publishedAt DateTime?
 

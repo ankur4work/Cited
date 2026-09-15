@@ -22,6 +22,7 @@ import { reconcileMetaobjectProcessor } from './processors/reconcile-metaobject'
 import { syndicateBackfillProcessor } from './processors/syndicate-backfill';
 import { summarizeProductProcessor } from './processors/summarize-product';
 import { mediaBackfillProcessor } from './processors/media-backfill';
+import { translateReviewProcessor } from './processors/translate-review';
 import { moveToDlq } from './dlq';
 import { logger } from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
@@ -164,6 +165,7 @@ type AiHandler = (job: Job<AiJobData, unknown, AiJobName>) => Promise<void>;
 
 const aiHandlers: Record<AiJobName, AiHandler> = {
   'ai:summarize-product': summarizeProductProcessor,
+  'ai:translate-review': translateReviewProcessor,
   // Declared in queue.ts, not yet built. Throwing beats a no-op handler, which
   // would ACK the work as done and leave the feature silently absent.
   'ai:moderate-review': async () => {

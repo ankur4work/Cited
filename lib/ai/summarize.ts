@@ -1,8 +1,11 @@
-import OpenAI from 'openai';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { openai, estimateCostCents, AiConfigError } from './client';
+
+// Re-exported so callers and tests keep one import site for cost accounting.
+export { estimateCostCents };
 
 /**
  * AI review summaries — the first capability that is actually paid-only.
@@ -120,33 +123,6 @@ export class SummarizeError extends Error {
   }
 }
 
-// gpt-5.4-mini list price: $0.75 / MTok input, $4.50 / MTok output.
-// Kept here rather than in env because it is a fact about the model, not a
-// deployment knob — if these drift the fix is a code change with a commit
-// message, not a silently wrong number in someone's .env. Changing
-// AI_MODEL_BULK to a model on different rates makes these wrong; that is a
-// deliberate tradeoff against making pricing configurable and therefore
-// silently mis-set.
-const INPUT_CENTS_PER_MTOK = 75;
-const OUTPUT_CENTS_PER_MTOK = 450;
-
-/**
- * Cost of one call, in cents, rounded UP.
- *
- * A single summary costs a small fraction of a cent, and both
- * `Summary.costCents` and `Store.aiCentsUsedMtd` are integer cents — so honest
- * rounding would record 0 and the monthly budget would never advance, leaving
- * the cap decorative. Ceiling instead: at the $5 default a store gets ~500
- * summaries a month, which is far more than any catalogue needs, and the
- * counter can only ever over-state spend. This is a safety rail, not a meter.
- */
-export function estimateCostCents(inputTokens: number, outputTokens: number): number {
-  const micro =
-    (inputTokens * INPUT_CENTS_PER_MTOK) / 1_000_000 +
-    (outputTokens * OUTPUT_CENTS_PER_MTOK) / 1_000_000;
-  return Math.max(1, Math.ceil(micro));
-}
-
 const SYSTEM_PROMPT = `You summarise product reviews for an online store.
 
 You will be given the reviews for ONE product. Produce a structured summary that
@@ -192,16 +168,6 @@ function buildCorpus(reviews: ReviewForSummary[]): string {
     .join('\n');
 }
 
-let cachedClient: OpenAI | null = null;
-
-function client(): OpenAI {
-  if (!env.OPENAI_API_KEY) {
-    throw new SummarizeError('OPENAI_API_KEY is not configured', false);
-  }
-  cachedClient ??= new OpenAI({ apiKey: env.OPENAI_API_KEY });
-  return cachedClient;
-}
-
 /**
  * Summarise one product's reviews.
  *
@@ -221,7 +187,17 @@ export async function summarizeProductReviews(input: {
   const model = env.AI_MODEL_BULK;
   const corpus = buildCorpus(reviews);
 
-  const completion = await client().chat.completions.parse({
+  // A missing key is terminal, not transient: surfaced as a SummarizeError so
+  // the processor logs and returns instead of handing it to retry backoff.
+  let client;
+  try {
+    client = openai();
+  } catch (err) {
+    if (err instanceof AiConfigError) throw new SummarizeError(err.message, false);
+    throw err;
+  }
+
+  const completion = await client.chat.completions.parse({
     model,
     // `max_completion_tokens`, not `max_tokens`: the gpt-5 family reasons
     // before answering and rejects the older parameter. The ceiling is

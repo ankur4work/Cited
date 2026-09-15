@@ -101,6 +101,8 @@ export interface ReviewMetaobjectInput {
   orderGid?: string | null;
   variantGid?: string | null;
   merchantReply?: string | null;
+  /** When the merchant replied. Omitted when there is no reply to date. */
+  merchantRepliedAt?: Date | null;
   /** ISO 639-1. */
   language?: string | null;
   mediaUrls?: string[];
@@ -192,6 +194,12 @@ function buildFields(input: ReviewMetaobjectInput): Array<{ key: string; value: 
   }
   if (input.publishedAt) {
     fields.push({ key: 'published_at', value: dateTimeValue(input.publishedAt) });
+  }
+  // Only sent alongside the reply itself. A timestamp with no text would read
+  // on any consuming surface as "the store replied" above nothing, and the
+  // optional-field loop above already drops an empty merchant_reply.
+  if (input.merchantRepliedAt && input.merchantReply) {
+    fields.push({ key: 'merchant_replied_at', value: dateTimeValue(input.merchantRepliedAt) });
   }
 
   return fields;
