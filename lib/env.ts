@@ -24,6 +24,12 @@ const EnvObject = z.object({
 
   SHOPIFY_APP_HANDLE: z.string().min(1).default('cited-reviews'),
   SHOPIFY_FREE_PLAN_NAME: z.string().min(1).default('Free'),
+  // The top tier's INVOICE name, which the Partner Dashboard marks "Can't be
+  // changed later". It lives in config rather than in code because the name is
+  // chosen in the dashboard and is immutable once a merchant subscribes — if
+  // the two drift, a $299 store silently resolves to the $49 entitlement set.
+  // Matched before the Pro rule, so a name containing "pro" still lands here.
+  SHOPIFY_SCALE_PLAN_NAME: z.string().min(1).default('Scale'),
 
   // ── Datastores ─────────────────────────────────────────────
   DATABASE_URL: z.string().url('DATABASE_URL must be a valid connection string'),
@@ -69,6 +75,19 @@ const EnvObject = z.object({
   // Hard monthly ceiling per store. Free tier gets 0 — an uncapped free
   // tier with AI features is how this product dies (PLAN.md §8).
   AI_BUDGET_CENTS_PER_STORE: z.coerce.number().int().nonnegative().default(500),
+
+  // Below this, a summary would be an opinion rather than a synthesis: five
+  // reviews cannot support a mention count, and rendering "1 person mentioned
+  // sizing" reads as noise. Products under the threshold render nothing.
+  AI_SUMMARY_MIN_REVIEWS: z.coerce.number().int().positive().default(5),
+  // Regenerate once this many new reviews have landed since the last run.
+  // Debouncing by count rather than by time is what keeps cost proportional
+  // to actual change instead of to how long the app has been installed.
+  AI_SUMMARY_REGEN_DELTA: z.coerce.number().int().positive().default(5),
+  // Corpus ceiling per call. A product with 4,000 reviews does not produce a
+  // better summary than one with 200 — it produces the same summary and a
+  // bill. Newest-first, so the sample tracks the current state of the product.
+  AI_SUMMARY_MAX_REVIEWS: z.coerce.number().int().positive().default(200),
 
   // ── Observability ──────────────────────────────────────────
   SENTRY_DSN: z.string().url().optional(),
@@ -206,6 +225,7 @@ const BUILD_STUB: Env = {
   SHOPIFY_SCOPES: 'read_products',
   SHOPIFY_APP_HANDLE: 'cited-reviews',
   SHOPIFY_FREE_PLAN_NAME: 'Free',
+  SHOPIFY_SCALE_PLAN_NAME: 'Scale',
   DATABASE_URL: 'postgresql://stub:stub@localhost:5432/stub',
   REDIS_URL: 'redis://localhost:6379',
   SESSION_SECRET: '0'.repeat(64),
@@ -221,6 +241,9 @@ const BUILD_STUB: Env = {
   AI_MODEL_BULK: 'claude-haiku-4-5-20251001',
   AI_MODEL_REASONING: 'claude-sonnet-5',
   AI_BUDGET_CENTS_PER_STORE: 500,
+  AI_SUMMARY_MIN_REVIEWS: 5,
+  AI_SUMMARY_REGEN_DELTA: 5,
+  AI_SUMMARY_MAX_REVIEWS: 200,
   SENTRY_TRACES_SAMPLE_RATE: 0.1,
   ADMIN_EMAILS: '',
   ADMIN_BEARER: '',

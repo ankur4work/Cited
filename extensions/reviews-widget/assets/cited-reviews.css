@@ -299,3 +299,125 @@
 @media (prefers-reduced-motion: no-preference) {
   .cited-reviews__more { transition: background-color 120ms ease; }
 }
+
+/*
+ * AI review summary ("What buyers say").
+ *
+ * Every selector is a descendant of .cited-reviews, same invariant as the rest
+ * of this file — the block cannot reach outside itself and cannot be reached
+ * by a theme rule that does not already target our container.
+ *
+ * Uses the same custom properties the merchant already tunes in the theme
+ * editor, so the summary inherits their colour and radius choices instead of
+ * introducing a second look inside one widget.
+ */
+.cited-reviews .cited-summary {
+  margin-top: var(--cited-gap);
+  padding: var(--cited-gap);
+  border: 1px solid var(--cited-border);
+  border-radius: var(--cited-radius);
+}
+
+.cited-reviews .cited-summary__title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.cited-reviews .cited-summary__provenance {
+  margin: 4px 0 var(--cited-gap);
+  font-size: 0.75rem;
+  color: var(--cited-muted);
+}
+
+/*
+ * Two columns where there is room, stacked where there is not. `auto-fit` with
+ * a min track rather than a media query: the block can be placed in a narrow
+ * product column or a full-width section, and it has no way to know which.
+ */
+.cited-reviews .cited-summary__columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: var(--cited-gap);
+}
+
+.cited-reviews .cited-summary__column-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--cited-muted);
+  margin: 0 0 8px;
+}
+
+.cited-reviews .cited-summary__points {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.cited-reviews .cited-summary__point {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.875rem;
+}
+
+.cited-reviews .cited-summary__label { min-width: 0; }
+
+.cited-reviews .cited-summary__mentions {
+  flex: none;
+  font-size: 0.75rem;
+  color: var(--cited-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.cited-reviews .cited-summary__themes {
+  margin-top: var(--cited-gap);
+  padding-top: var(--cited-gap);
+  border-top: 1px solid var(--cited-border);
+}
+
+.cited-reviews .cited-summary__theme-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.cited-reviews .cited-summary__theme {
+  display: grid;
+  grid-template-columns: minmax(5rem, 8rem) auto 1fr;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.875rem;
+}
+
+.cited-reviews .cited-summary__theme-note {
+  font-size: 0.75rem;
+  color: var(--cited-muted);
+}
+
+.cited-reviews .cited-summary__meter {
+  display: inline-flex;
+  gap: 3px;
+  line-height: 0;
+}
+
+/*
+ * The dots restate `sentiment` visually. They are aria-hidden and the meter
+ * carries the sentiment in words, so nothing here is the only way to read the
+ * value — colour and shape are decoration, not information.
+ */
+.cited-reviews .cited-summary__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--cited-border);
+}
+
+.cited-reviews .cited-summary__dot--on { background: var(--cited-star); }

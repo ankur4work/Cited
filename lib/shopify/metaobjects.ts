@@ -287,6 +287,75 @@ export async function setProductReviewList(
   }
 }
 
+const SUMMARY_SET = /* GraphQL */ `
+  mutation CitedProductSummary($metafields: [MetafieldsSetInput!]!) {
+    metafieldsSet(metafields: $metafields) {
+      metafields { id }
+      userErrors { field message code }
+    }
+  }
+`;
+
+/**
+ * Publish a product's AI review summary where the theme can render it.
+ *
+ * The summary is computed from our own Postgres corpus, but Liquid cannot read
+ * our database — so it has to reach the storefront as a product metafield, the
+ * same route the review list already takes. `$app:cited` is this app's reserved
+ * namespace, which no other app and no merchant edit can collide with, and
+ * `json` keeps the structure intact so the block can render pros, cons and
+ * themes as separate elements rather than re-parsing a string.
+ *
+ * Writing it as a metafield rather than injecting it client-side is the whole
+ * point: the summary lands in the product page's raw HTML, so Google and the
+ * AI crawlers read it. Every competitor's summary is behind JavaScript.
+ *
+ * Passing `null` clears it — used when a product's summary is no longer
+ * renderable (every point fell below the mention threshold, or the reviews were
+ * redacted out from under it). Clearing beats leaving a stale summary up: the
+ * shopper cannot tell the difference, and the merchant is accountable for it.
+ */
+export async function setProductSummaryMetafield(
+  client: ShopifyClient,
+  input: { productGid: string; summary: unknown | null },
+): Promise<void> {
+  const resp = await client.graphql<{
+    metafieldsSet: {
+      userErrors: Array<{ field: string[] | null; message: string; code?: string }>;
+    } | null;
+  }>(SUMMARY_SET, {
+    metafields: [
+      {
+        ownerId: input.productGid,
+        namespace: '$app:cited',
+        key: 'summary',
+        type: 'json',
+        // `null` is not a valid metafield value, so an empty object is the
+        // cleared state. The block treats a summary with no pros, cons or
+        // themes as absent, so this renders nothing either way.
+        value: JSON.stringify(input.summary ?? {}),
+      },
+    ],
+  });
+
+  if (!resp.data?.metafieldsSet) {
+    const message =
+      resp.errors?.map((e) => e.message).join('; ') ?? 'metafieldsSet returned no data';
+    const denied = /access denied|required access/i.test(message);
+    throw new MetaobjectError(`summary: ${message}`, denied ? 'ACCESS_DENIED' : undefined, denied);
+  }
+
+  const errors = resp.data.metafieldsSet.userErrors ?? [];
+  if (errors.length > 0) {
+    const first = errors[0]!;
+    throw new MetaobjectError(
+      `summary: ${errors.map((e) => e.message).join('; ')}`,
+      first.code,
+      isTerminalCode(first.code, first.message),
+    );
+  }
+}
+
 export async function upsertReviewMetaobject(
   client: ShopifyClient,
   input: ReviewMetaobjectInput,

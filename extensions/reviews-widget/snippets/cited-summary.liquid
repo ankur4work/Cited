@@ -1,0 +1,150 @@
+{% comment %}
+  AI review summary — "What buyers say".
+
+  Rendered server-side from an app-owned JSON metafield, exactly like the review
+  list. That is the whole point: every competitor injects their summary with
+  JavaScript, so Google and the AI shopping assistants never see the text. Ours
+  is in the initial HTML response, which makes the same code both a conversion
+  feature and an AEO one (PLAN.md §5.3).
+
+  Every line here is backed by a mention count computed from real reviews. The
+  job that writes this metafield drops any point fewer than two reviewers
+  raised, so there is no path by which this block renders a claim about a
+  merchant's product that nobody actually made (PLAN.md §4.2 — the liability
+  boundary).
+
+  Parameters:
+    summary   — parsed `app.summary` metafield value
+    uid       — block id, for the aria-describedby wiring
+
+  Renders nothing at all when the metafield is absent, empty, or has been
+  cleared — a Free store, a product under the review threshold, and a corpus
+  with no consensus are all correctly indistinguishable here.
+{% endcomment %}
+
+{%- liquid
+  assign has_pros = false
+  assign has_cons = false
+  assign has_themes = false
+
+  if summary.pros != blank and summary.pros.size > 0
+    assign has_pros = true
+  endif
+  if summary.cons != blank and summary.cons.size > 0
+    assign has_cons = true
+  endif
+  if summary.themes != blank and summary.themes.size > 0
+    assign has_themes = true
+  endif
+-%}
+
+{%- if has_pros or has_cons or has_themes -%}
+  <div class="cited-summary" role="group" aria-labelledby="cited-summary-title-{{ uid }}">
+    <h3 class="cited-summary__title" id="cited-summary-title-{{ uid }}">What buyers say</h3>
+
+    {%- comment -%}
+      Stated plainly rather than as a badge. A shopper deciding whether to trust
+      a summary is entitled to know a machine wrote it and what it read.
+    {%- endcomment -%}
+    <p class="cited-summary__provenance">
+      Summarised from this product's reviews. Counts show how many reviewers
+      raised each point.
+    </p>
+
+    {%- if has_pros or has_cons -%}
+      <div class="cited-summary__columns">
+        {%- if has_pros -%}
+          <div class="cited-summary__column">
+            <h4 class="cited-summary__column-title cited-summary__column-title--pro">Praised</h4>
+            <ul class="cited-summary__points" role="list">
+              {%- for point in summary.pros limit: 5 -%}
+                <li class="cited-summary__point">
+                  <span class="cited-summary__label">{{ point.label | escape }}</span>
+                  <span class="cited-summary__mentions">
+                    {%- if point.mentions == 1 -%}
+                      1 mention
+                    {%- else -%}
+                      {{ point.mentions }} mentions
+                    {%- endif -%}
+                  </span>
+                </li>
+              {%- endfor -%}
+            </ul>
+          </div>
+        {%- endif -%}
+
+        {%- if has_cons -%}
+          <div class="cited-summary__column">
+            <h4 class="cited-summary__column-title cited-summary__column-title--con">Criticised</h4>
+            <ul class="cited-summary__points" role="list">
+              {%- for point in summary.cons limit: 5 -%}
+                <li class="cited-summary__point">
+                  <span class="cited-summary__label">{{ point.label | escape }}</span>
+                  <span class="cited-summary__mentions">
+                    {%- if point.mentions == 1 -%}
+                      1 mention
+                    {%- else -%}
+                      {{ point.mentions }} mentions
+                    {%- endif -%}
+                  </span>
+                </li>
+              {%- endfor -%}
+            </ul>
+          </div>
+        {%- endif -%}
+      </div>
+    {%- endif -%}
+
+    {%- if has_themes -%}
+      <div class="cited-summary__themes">
+        <h4 class="cited-summary__column-title">By theme</h4>
+        <ul class="cited-summary__theme-list" role="list">
+          {%- for theme in summary.themes limit: 6 -%}
+            {%- liquid
+              # The meter is a visual restatement of `sentiment`, never the
+              # source of truth — the accessible name below carries the word
+              # itself, so a screen reader is not asked to interpret dots.
+              case theme.sentiment
+                when 'very_positive'
+                  assign filled = 5
+                  assign sentiment_label = 'strongly positive'
+                when 'positive'
+                  assign filled = 4
+                  assign sentiment_label = 'mostly positive'
+                when 'mixed'
+                  assign filled = 3
+                  assign sentiment_label = 'mixed'
+                when 'negative'
+                  assign filled = 2
+                  assign sentiment_label = 'mostly negative'
+                when 'very_negative'
+                  assign filled = 1
+                  assign sentiment_label = 'strongly negative'
+                else
+                  assign filled = 3
+                  assign sentiment_label = 'mixed'
+              endcase
+            -%}
+            <li class="cited-summary__theme">
+              <span class="cited-summary__theme-name">{{ theme.name | escape }}</span>
+              <span
+                class="cited-summary__meter"
+                role="img"
+                aria-label="{{ sentiment_label }}, {{ theme.mentions }} mentions"
+              >
+                {%- for i in (1..5) -%}
+                  {%- if i <= filled -%}
+                    <span class="cited-summary__dot cited-summary__dot--on" aria-hidden="true"></span>
+                  {%- else -%}
+                    <span class="cited-summary__dot" aria-hidden="true"></span>
+                  {%- endif -%}
+                {%- endfor -%}
+              </span>
+              <span class="cited-summary__theme-note">{{ sentiment_label }}</span>
+            </li>
+          {%- endfor -%}
+        </ul>
+      </div>
+    {%- endif -%}
+  </div>
+{%- endif -%}

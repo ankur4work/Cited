@@ -161,20 +161,31 @@ export function planFromSubscription(sub: ActiveSubscription | null): Plan {
 
   if (name === env.SHOPIFY_FREE_PLAN_NAME.trim().toLowerCase()) return 'FREE';
 
+  // SCALE is tested BEFORE Pro, and on an exact match rather than a substring.
+  // Order matters: a top tier named "Cited Pro Unlimited" contains "pro", so
+  // the substring rule below would claim it first and quietly bill a merchant
+  // $299 for the $49 entitlement set. Exactness matters for the same reason in
+  // reverse — a substring match on a short word would let an unrelated plan
+  // name drift into the highest tier.
+  if (name === env.SHOPIFY_SCALE_PLAN_NAME.trim().toLowerCase()) return 'SCALE';
+
   // Match the invoice name, which the dashboard marks "Can't be changed later"
   // and is therefore a stable identifier.
   if (name.includes('pro')) return 'PRO';
 
-  // Unknown plan name — the dashboard was renamed without a code change. With
-  // a single paid tier there is no lower rung to fall back to, and the store
-  // does hold an active non-free subscription, so treating it as PRO is the
-  // only reading that doesn't bill a merchant for something we then withhold.
-  // Logged loudly so the mismatch surfaces instead of persisting.
+  // Unknown plan name — a plan was added or renamed in the dashboard without a
+  // matching code change. The store holds an active, non-free subscription, so
+  // the only question is which paid tier, and every wrong answer here is a
+  // merchant paying for something we withhold. Resolving UP is the error we
+  // can live with: over-serving costs us margin on one store until the names
+  // are aligned, while under-serving takes features from someone who paid for
+  // them and looks, from their side, indistinguishable from the app being
+  // broken. Logged loudly so this is a temporary state, not a silent one.
   logger.warn(
     { subscriptionName: sub.name },
-    'Unrecognised subscription name — defaulting to PRO. Align the dashboard plan name.',
+    'Unrecognised subscription name — defaulting to SCALE. Align SHOPIFY_SCALE_PLAN_NAME with the dashboard plan name.',
   );
-  return 'PRO';
+  return 'SCALE';
 }
 
 /**

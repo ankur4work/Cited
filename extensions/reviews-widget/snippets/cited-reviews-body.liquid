@@ -55,6 +55,10 @@
   # metaobject references, newest first, kept in step by the syndication job.
   # `app` is the theme-app-extension alias for this app's reserved namespace.
   assign reviews_list = product.metafields.app.reviews.value
+  # Same reserved namespace as the review list above. Written by the AI summary
+  # job for PRO stores only; absent everywhere else, which is why the render
+  # below is guarded rather than conditional on any plan flag reaching Liquid.
+  assign review_summary = product.metafields.app.summary.value
   assign per_page = per_page | default: 10
 
   assign scale_max = 5
@@ -120,6 +124,16 @@
     <div class="cited-reviews__empty">
       <p>{{ empty_text | escape }}</p>
     </div>
+  {%- endif -%}
+
+  {%- comment -%}
+    ── AI summary ──
+    Sits between the aggregate and the review list because that is the order a
+    shopper reads in: how many liked it, what they said about it, then the
+    reviews themselves. Renders nothing when the metafield is absent.
+  {%- endcomment -%}
+  {%- if has_reviews and review_summary != blank -%}
+    {%- render 'cited-summary', summary: review_summary, uid: uid -%}
   {%- endif -%}
 
   {%- comment -%}

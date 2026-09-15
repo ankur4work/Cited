@@ -9,6 +9,7 @@ import {
   REVIEW_LIST_LIMIT,
 } from '@/lib/shopify/metaobjects';
 import { recomputeProductAggregate } from '@/lib/reviews/aggregate';
+import { enqueueProductSummary } from '../enqueue';
 import type { SyndicationJobData, SyndicationJobName } from '../queue';
 
 /**
@@ -45,6 +46,21 @@ export async function syndicateAggregateProcessor(
   });
 
   if (!store || store.uninstalledAt) return;
+
+  // Refresh the AI summary from the same signal that moved the aggregate: this
+  // job already fires on every change to a product's published review set and
+  // is already debounced, so hooking in here means one summary per burst rather
+  // than one per review, with no second trigger to keep in step.
+  //
+  // Deliberately ahead of the review-scope gate below. Summaries are written to
+  // an app-owned metafield under `write_products`, which every install has, so
+  // a store still waiting on Shopify to approve `write_product_reviews` is not
+  // also waiting for this. The summary processor decides whether the store is
+  // entitled and whether anything actually changed — enqueueing is cheap, and
+  // putting the plan check there keeps one owner for that decision.
+  for (const affectedId of result.affectedProductIds) {
+    await enqueueProductSummary({ storeId, productId: affectedId });
+  }
 
   if (!store.reviewScopeGranted) {
     logger.debug(

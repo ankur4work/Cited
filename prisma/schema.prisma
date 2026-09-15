@@ -27,7 +27,8 @@ datasource db {
 
 enum Plan {
   FREE
-  PRO // $29 — everything beyond the free tier
+  PRO // $49 — the AI layer
+  SCALE // $299 — everything, uncapped, priority support
 }
 
 enum ReviewStatus {

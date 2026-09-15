@@ -1,0 +1,237 @@
+import Anthropic from '@anthropic-ai/sdk';
+import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
+import * as z from 'zod/v4';
+import { env } from '@/lib/env';
+import { logger } from '@/lib/logger';
+
+/**
+ * AI review summaries — the first capability that is actually Pro-only.
+ *
+ * Not a paragraph blob (PLAN.md §4.2). A shopper looking at 214 reviews and a
+ * 4.6 average learns nothing; what they want is what people liked, what they
+ * complained about, and how confident either claim is. So the output is
+ * structured: pros and cons with mention counts, plus sentiment by theme.
+ *
+ * The mention counts are the load-bearing part. "Runs small" with 19 mentions
+ * behind it is evidence; the same phrase with nothing behind it is the model's
+ * impression of the corpus, which is exactly the thing we must not ship as a
+ * claim about a merchant's product.
+ *
+ * Rendering happens server-side in Liquid, so the summary text lands in the
+ * product page's raw HTML alongside the reviews themselves. That is what makes
+ * this simultaneously a conversion feature and an AEO feature — same code,
+ * same architecture, no separate crawler path (PLAN.md §5.3).
+ */
+
+// Numeric/length constraints are deliberately absent: the structured-outputs
+// schema compiler rejects `minimum`/`maxLength` and friends. Bounds that matter
+// (how many bullets we render, what counts as a usable summary) are enforced
+// after parsing, in code that can actually explain itself.
+const MentionSchema = z.object({
+  /** Shopper-facing phrase, e.g. "Fit true to size". Not a sentence. */
+  label: z.string(),
+  /** How many reviews in the sample raised it. */
+  mentions: z.number().int(),
+});
+
+const ThemeSchema = z.object({
+  /** Attribute being scored, e.g. "Sizing", "Quality", "Shipping". */
+  name: z.string(),
+  sentiment: z.enum(['very_positive', 'positive', 'mixed', 'negative', 'very_negative']),
+  mentions: z.number().int(),
+});
+
+export const ProductSummarySchema = z.object({
+  pros: z.array(MentionSchema),
+  cons: z.array(MentionSchema),
+  themes: z.array(ThemeSchema),
+});
+
+export type ProductSummary = z.infer<typeof ProductSummarySchema>;
+
+/** What the caller persists. Cost is reported so the budget gate can debit it. */
+export interface SummaryResult {
+  content: ProductSummary;
+  model: string;
+  costCents: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export interface ReviewForSummary {
+  rating: number;
+  title: string | null;
+  body: string | null;
+}
+
+/** Raised when summarisation cannot proceed. Never surfaced to a shopper. */
+export class SummarizeError extends Error {
+  constructor(
+    message: string,
+    /** False for conditions a retry cannot fix (no API key, empty corpus). */
+    readonly retryable = true,
+  ) {
+    super(message);
+    this.name = 'SummarizeError';
+  }
+}
+
+// Claude Haiku 4.5 list price: $1 / MTok input, $5 / MTok output.
+// Kept here rather than in env because it is a fact about the model, not a
+// deployment knob — if these drift the fix is a code change with a commit
+// message, not a silently wrong number in someone's .env.
+const INPUT_CENTS_PER_MTOK = 100;
+const OUTPUT_CENTS_PER_MTOK = 500;
+
+/**
+ * Cost of one call, in cents, rounded UP.
+ *
+ * A single Haiku summary costs a small fraction of a cent, and both
+ * `Summary.costCents` and `Store.aiCentsUsedMtd` are integer cents — so honest
+ * rounding would record 0 and the monthly budget would never advance, leaving
+ * the cap decorative. Ceiling instead: at the $5 default a store gets ~500
+ * summaries a month, which is far more than any catalogue needs, and the
+ * counter can only ever over-state spend. This is a safety rail, not a meter.
+ */
+export function estimateCostCents(inputTokens: number, outputTokens: number): number {
+  const micro =
+    (inputTokens * INPUT_CENTS_PER_MTOK) / 1_000_000 +
+    (outputTokens * OUTPUT_CENTS_PER_MTOK) / 1_000_000;
+  return Math.max(1, Math.ceil(micro));
+}
+
+const SYSTEM_PROMPT = `You summarise product reviews for an online store.
+
+You will be given the reviews for ONE product. Produce a structured summary that
+helps a shopper decide, using only what reviewers actually wrote.
+
+Hard rules:
+- Every pro, con and theme must be grounded in the supplied reviews. Never state
+  a property of the product that no reviewer mentioned. You are summarising
+  opinions, not describing merchandise.
+- "mentions" is a count of how many supplied reviews raise that point. Count
+  them. Do not estimate, round, or invent a number to make a point look stronger.
+- Omit anything raised by only one reviewer. One person is an anecdote.
+- Labels are short shopper-facing phrases ("Runs small", "Fast delivery"), not
+  sentences and not quotes.
+- Never mention a reviewer by name, and never reproduce contact details.
+- Do not make medical, safety, legal or regulatory claims, and do not repeat a
+  reviewer's, even if several make it.
+- If the reviews do not support a category, return an empty array for it. An
+  empty array is a correct answer; a padded one is not.
+
+Themes are the attributes reviewers keep returning to — sizing, quality,
+shipping, value, comfort, accuracy of the listing. Pick the ones this corpus
+actually discusses rather than working from a fixed list.`;
+
+function buildCorpus(reviews: ReviewForSummary[]): string {
+  return reviews
+    .map((r, i) => {
+      const title = r.title?.trim();
+      const body = r.body?.trim();
+      const text = [title, body].filter(Boolean).join(' — ');
+      return `[${i + 1}] ${r.rating}/5 ${text}`;
+    })
+    .join('\n');
+}
+
+let cachedClient: Anthropic | null = null;
+
+function client(): Anthropic {
+  if (!env.ANTHROPIC_API_KEY) {
+    throw new SummarizeError('ANTHROPIC_API_KEY is not configured', false);
+  }
+  cachedClient ??= new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+  return cachedClient;
+}
+
+/**
+ * Summarise one product's reviews.
+ *
+ * Callers are responsible for the entitlement and budget checks — this function
+ * spends money and does not ask whether it should.
+ */
+export async function summarizeProductReviews(input: {
+  productTitle: string;
+  reviews: ReviewForSummary[];
+}): Promise<SummaryResult> {
+  const { productTitle, reviews } = input;
+
+  if (reviews.length === 0) {
+    throw new SummarizeError('No reviews to summarise', false);
+  }
+
+  const model = env.AI_MODEL_BULK;
+  const corpus = buildCorpus(reviews);
+
+  const message = await client().messages.parse({
+    model,
+    // Generous relative to the real output (a few hundred tokens). Truncating
+    // mid-JSON costs the whole call, and unused headroom costs nothing —
+    // output is billed per token produced, not per token allowed.
+    max_tokens: 4096,
+    system: SYSTEM_PROMPT,
+    output_config: { format: zodOutputFormat(ProductSummarySchema) },
+    messages: [
+      {
+        role: 'user',
+        content: `Product: ${productTitle}\nReviews (${reviews.length}):\n\n${corpus}`,
+      },
+    ],
+  });
+
+  // A refusal is a successful HTTP response with no usable content. Treated as
+  // terminal: the same corpus will be refused again, so retrying only burns
+  // budget on a verdict that will not change.
+  if (message.stop_reason === 'refusal') {
+    throw new SummarizeError(
+      `Model declined to summarise (${message.stop_details?.category ?? 'unspecified'})`,
+      false,
+    );
+  }
+
+  const parsed = message.parsed_output;
+  if (!parsed) {
+    throw new SummarizeError(`Model returned no parseable summary (${message.stop_reason})`);
+  }
+
+  const inputTokens = message.usage.input_tokens;
+  const outputTokens = message.usage.output_tokens;
+
+  logger.debug(
+    { model, reviews: reviews.length, inputTokens, outputTokens },
+    'Product summary generated',
+  );
+
+  return {
+    content: dropUnsupported(parsed),
+    model,
+    costCents: estimateCostCents(inputTokens, outputTokens),
+    inputTokens,
+    outputTokens,
+  };
+}
+
+/**
+ * Last line of defence on the grounding rule.
+ *
+ * The prompt tells the model to omit single-mention points, but a prompt is a
+ * request and this is a claim about a merchant's product rendered on their
+ * storefront. Anything that cannot point at two or more reviewers is dropped
+ * here, where it is a filter rather than an instruction.
+ */
+export function dropUnsupported(summary: ProductSummary): ProductSummary {
+  const supported = <T extends { mentions: number }>(items: T[]): T[] =>
+    items.filter((i) => i.mentions >= 2);
+
+  return {
+    pros: supported(summary.pros),
+    cons: supported(summary.cons),
+    themes: supported(summary.themes),
+  };
+}
+
+/** True when a summary has enough substance to be worth rendering. */
+export function isRenderable(summary: ProductSummary): boolean {
+  return summary.pros.length + summary.cons.length + summary.themes.length > 0;
+}

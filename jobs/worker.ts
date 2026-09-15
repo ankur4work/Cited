@@ -9,6 +9,8 @@ import {
   type MaintenanceJobName,
   type SyndicationJobData,
   type SyndicationJobName,
+  type AiJobData,
+  type AiJobName,
 } from './queue';
 import { compliancePurgeProcessor } from './processors/compliance-purge';
 import { retentionSweepProcessor } from './processors/retention-sweep';
@@ -18,6 +20,7 @@ import { syndicateReviewProcessor } from './processors/syndicate-review';
 import { syndicateAggregateProcessor } from './processors/syndicate-aggregate';
 import { reconcileMetaobjectProcessor } from './processors/reconcile-metaobject';
 import { syndicateBackfillProcessor } from './processors/syndicate-backfill';
+import { summarizeProductProcessor } from './processors/summarize-product';
 import { moveToDlq } from './dlq';
 import { logger } from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
@@ -30,7 +33,7 @@ import { prisma } from '@/lib/prisma';
  * loop, and the web tier needs to scale on request volume while the worker
  * scales on job volume.
  *
- * Consumes ingestion, syndication and maintenance. The email, import, AI and
+ * Consumes ingestion, syndication, AI and maintenance. The email, import and
  * AEO queues are declared in queue.ts and intentionally left unconsumed rather
  * than stubbed — a no-op processor would silently ACK real work as done.
  */
@@ -150,6 +153,58 @@ syndicationWorker.on('failed', async (job, err) => {
 // running a dozen at once, while there is a clear argument for keeping the
 // blast radius of a bug small.
 
+// ── AI ───────────────────────────────────────────────────────
+// Low concurrency on purpose. These jobs are the only ones that spend money
+// per execution, and they are never latency-critical — a summary that lands
+// thirty seconds later is indistinguishable to a shopper. Capping the fleet
+// here bounds how fast a bug can burn through a store's monthly AI budget.
+
+type AiHandler = (job: Job<AiJobData, unknown, AiJobName>) => Promise<void>;
+
+const aiHandlers: Record<AiJobName, AiHandler> = {
+  'ai:summarize-product': summarizeProductProcessor,
+  // Declared in queue.ts, not yet built. Throwing beats a no-op handler, which
+  // would ACK the work as done and leave the feature silently absent.
+  'ai:moderate-review': async () => {
+    throw new Error('ai:moderate-review processor not implemented');
+  },
+  'ai:mine-insights': async () => {
+    throw new Error('ai:mine-insights processor not implemented');
+  },
+};
+
+const aiWorker = new Worker<AiJobData, unknown, AiJobName>(
+  QUEUES.AI,
+  async (job) => {
+    const handler = aiHandlers[job.name];
+    if (!handler) throw new Error(`No handler for job name ${job.name}`);
+    return handler(job);
+  },
+  { connection, concurrency: 2 },
+);
+
+aiWorker.on('failed', async (job, err) => {
+  if (!job) return;
+  logger.error(
+    {
+      queue: QUEUES.AI,
+      name: job.name,
+      jobId: job.id,
+      storeId: job.data?.storeId,
+      productId: job.data?.productId,
+      attempt: job.attemptsMade,
+      err: err.message,
+    },
+    'AI job failed',
+  );
+
+  if (job.attemptsMade >= (job.opts.attempts ?? 1)) {
+    await moveToDlq(job as Job<{ storeId: string }>, err).catch((e) =>
+      logger.error({ err: (e as Error).message }, 'Failed to move job to DLQ'),
+    );
+  }
+});
+
 type MaintenanceHandler = (
   job: Job<MaintenanceJobData, unknown, MaintenanceJobName>,
 ) => Promise<void>;
@@ -236,7 +291,7 @@ void scheduleRecurringJobs().catch((err) =>
 );
 
 logger.info(
-  { queues: [QUEUES.INGESTION, QUEUES.SYNDICATION, QUEUES.MAINTENANCE] },
+  { queues: [QUEUES.INGESTION, QUEUES.SYNDICATION, QUEUES.AI, QUEUES.MAINTENANCE] },
   'Cited worker started',
 );
 
@@ -253,6 +308,7 @@ async function shutdown(signal: string): Promise<void> {
     await Promise.all([
       ingestionWorker.close(),
       syndicationWorker.close(),
+      aiWorker.close(),
       maintenanceWorker.close(),
     ]);
     await prisma.$disconnect();

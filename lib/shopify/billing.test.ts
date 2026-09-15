@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ActiveSubscription } from './billing';
 
 vi.mock('../env', () => ({
-  env: { SHOPIFY_FREE_PLAN_NAME: 'Free', SHOPIFY_APP_HANDLE: 'cited-reviews' },
+  env: {
+    SHOPIFY_FREE_PLAN_NAME: 'Free',
+    SHOPIFY_SCALE_PLAN_NAME: 'Scale',
+    SHOPIFY_APP_HANDLE: 'cited-reviews',
+  },
 }));
 vi.mock('./client', () => ({ ShopifyClient: class {} }));
 vi.mock('../logger', () => ({ logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn() } }));
@@ -58,10 +62,29 @@ describe('planFromSubscription', () => {
     expect(planFromSubscription(zeroed)).toBe('PRO');
   });
 
-  it('falls back to PRO for an unrecognised paid plan name', () => {
-    // Someone renamed the plan in the dashboard. The store is paying, so it
-    // keeps its entitlement; the warning is what surfaces the mismatch.
-    expect(planFromSubscription(sub({ name: 'Growth' }))).toBe('PRO');
+  it('maps the configured top-tier name to SCALE', () => {
+    expect(planFromSubscription(sub({ name: 'Scale' }))).toBe('SCALE');
+  });
+
+  it('matches the top tier case-insensitively and ignores padding', () => {
+    expect(planFromSubscription(sub({ name: '  SCALE  ' }))).toBe('SCALE');
+  });
+
+  it('still resolves a "pro"-containing name to PRO when it is not the configured top tier', () => {
+    // Documents the coupling that makes the SCALE check run first: the Pro
+    // rule is a substring match, so a top tier named "Cited Pro Unlimited"
+    // lands here — on the $49 entitlement set — unless SHOPIFY_SCALE_PLAN_NAME
+    // is set to that exact string. Naming the top tier and configuring it are
+    // one step, not two.
+    expect(planFromSubscription(sub({ name: 'Cited Pro Unlimited' }))).toBe('PRO');
+  });
+
+  it('falls back to the top tier for an unrecognised paid plan name', () => {
+    // Someone renamed a plan in the dashboard. The store is paying and we no
+    // longer know which tier, so we resolve up: over-serving costs margin on
+    // one store, under-serving takes away features someone paid for and is
+    // indistinguishable from the app being broken. The warning surfaces it.
+    expect(planFromSubscription(sub({ name: 'Growth' }))).toBe('SCALE');
   });
 });
 
