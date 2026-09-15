@@ -21,6 +21,7 @@ import { syndicateAggregateProcessor } from './processors/syndicate-aggregate';
 import { reconcileMetaobjectProcessor } from './processors/reconcile-metaobject';
 import { syndicateBackfillProcessor } from './processors/syndicate-backfill';
 import { summarizeProductProcessor } from './processors/summarize-product';
+import { mediaBackfillProcessor } from './processors/media-backfill';
 import { moveToDlq } from './dlq';
 import { logger } from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
@@ -212,6 +213,7 @@ type MaintenanceHandler = (
 const maintenanceHandlers: Record<MaintenanceJobName, MaintenanceHandler> = {
   'compliance:purge': compliancePurgeProcessor,
   'retention:sweep': retentionSweepProcessor,
+  'media:backfill': mediaBackfillProcessor,
   // Declared in queue.ts but not yet built. Throwing beats a no-op handler,
   // which would ACK real work as done and silently retain media forever.
   'media-lifecycle': async () => {
@@ -284,6 +286,23 @@ async function scheduleRecurringJobs(): Promise<void> {
     },
   );
   logger.info('Retention sweep scheduled (daily 03:17)');
+
+  // Safety net for media URL resolution. The per-review job fired at upload
+  // time handles the common case; this catches a transcode slower than that
+  // job's delay, a worker restart mid-job, or a transient Admin API failure.
+  // Without it those rows keep a null URL forever and the shopper's video is
+  // simply never seen — the failure is invisible from both sides.
+  //
+  // Every five minutes: frequent enough that a slow transcode still surfaces
+  // while the shopper might plausibly look again, cheap enough that it costs
+  // nothing when there is nothing pending (the processor returns on an empty
+  // query before touching Shopify at all).
+  await maintenanceQueue.add(
+    'media:backfill',
+    {},
+    { repeat: { pattern: '*/5 * * * *' }, jobId: 'media:backfill:sweep' },
+  );
+  logger.info('Media URL backfill scheduled (every 5 minutes)');
 }
 
 void scheduleRecurringJobs().catch((err) =>

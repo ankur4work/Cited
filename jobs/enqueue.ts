@@ -357,6 +357,25 @@ export async function enqueueCompliancePurge(input: {
   );
 }
 
+/**
+ * Resolve public URLs for media Shopify was still processing.
+ *
+ * Delayed, because a video handed to Shopify a moment ago is certainly not
+ * transcoded yet and an immediate check would just waste an API call. Keyed by
+ * review so a shopper who uploads, reloads and uploads again does not stack
+ * three identical sweeps.
+ */
+export async function enqueueMediaBackfill(input: {
+  storeId: string;
+  reviewId: string;
+}): Promise<void> {
+  await maintenanceQueue.add(
+    'media:backfill',
+    { storeId: input.storeId, reviewId: input.reviewId },
+    { jobId: `media:backfill:${input.reviewId}`, delay: 20_000 },
+  );
+}
+
 /** Regenerate a product's AI review summary. Debounced per product. */
 export async function enqueueProductSummary(input: {
   storeId: string;

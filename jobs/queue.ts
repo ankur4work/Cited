@@ -159,12 +159,24 @@ export const aeoQueue = new Queue<AeoJobData, unknown, 'aeo:probe-store'>(QUEUES
 });
 
 // ── Maintenance ──────────────────────────────────────────────
-export type MaintenanceJobName = 'compliance:purge' | 'retention:sweep' | 'media-lifecycle';
+export type MaintenanceJobName =
+  | 'compliance:purge'
+  | 'retention:sweep'
+  | 'media:backfill'
+  | 'media-lifecycle';
 
 export interface MaintenanceJobData {
   /** Null for a compliance request against a shop that never installed. */
   storeId?: string | null;
   shopDomain?: string;
+
+  // ── media:backfill only ────────────────────────────────────
+  /**
+   * Narrow the sweep to one review. Set when a submission just uploaded a
+   * video, so that shopper's review resolves in seconds rather than waiting
+   * for the next scheduled pass. Absent means "every pending item".
+   */
+  reviewId?: string;
 
   // ── compliance:purge only ──────────────────────────────────
   complianceRequestId?: string;

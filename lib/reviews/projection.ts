@@ -74,6 +74,14 @@ const VERIFICATION_MAP: Record<VerificationStatus, AppVerificationStatus> = {
  * broken image URLs onto the merchant's storefront.
  */
 export function mediaPublicUrl(r2Key: string): string | null {
+  // Shopify-Files-backed media reuses this column to hold the file GID, not an
+  // R2 object key. Prefixing a bucket URL onto `gid://shopify/Video/123` yields
+  // a syntactically valid, entirely broken URL — and because it is non-null, it
+  // sails into the metaobject's media_urls and onto the storefront as a dead
+  // image. Latent for photos, whose URL is normally resolved inside the upload
+  // request; the default path for video, which is always pending at first.
+  if (r2Key.startsWith('gid://')) return null;
+
   const base = process.env.R2_PUBLIC_BASE_URL;
   if (!base) return null;
   return `${base.replace(/\/$/, '')}/${r2Key}`;

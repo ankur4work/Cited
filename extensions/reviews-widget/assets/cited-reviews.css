@@ -121,6 +121,22 @@
   border: 1px solid var(--cited-border);
 }
 
+/*
+ * Video gets a wider box than a photo thumbnail.
+ *
+ * At 88px square the native controls overlap the frame entirely and there is
+ * nothing left to see — the player becomes a play button on a postage stamp.
+ * 158x88 is 16:9, which matches what a phone shoots, so `object-fit: contain`
+ * has nothing to letterbox in the common case and degrades gracefully when a
+ * clip is portrait.
+ */
+.cited-review__media-item--video {
+  width: 158px;
+  height: 88px;
+  object-fit: contain;
+  background: #000;
+}
+
 .cited-review__reply {
   margin-top: 10px;
   padding: 10px 12px;

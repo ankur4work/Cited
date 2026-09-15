@@ -217,18 +217,62 @@
             <div class="cited-review__body">{{ review.body | escape | newline_to_br }}</div>
           {%- endif -%}
 
+          {%- comment -%}
+            `media_urls` is the ONLY media field on the standard product_review
+            definition — a bare list of URLs, with no type discriminator, and
+            we cannot add a field to a definition Shopify owns. So the type is
+            inferred from the URL, which is why the check below is broader than
+            a file extension: Shopify's transcoded sources live under
+            /cdn/shop/videos/ and carry a rendition suffix before the .mp4.
+
+            Getting this wrong is visible rather than silent — a video URL in
+            an <img> is a broken image — which is the failure mode to prefer
+            over guessing wrong in the other direction.
+          {%- endcomment -%}
           {%- if show_media and review.media_urls != blank -%}
             <div class="cited-review__media">
-              {%- for media_url in review.media_urls limit: 4 -%}
-                <img
-                  class="cited-review__media-item"
-                  src="{{ media_url }}"
-                  alt="Customer photo from a review by {{ r_author | escape }}"
-                  loading="lazy"
-                  decoding="async"
-                  width="88"
-                  height="88"
-                >
+              {%- for media_url in review.media_urls limit: 5 -%}
+                {%- liquid
+                  assign is_video = false
+                  if media_url contains '/cdn/shop/videos/'
+                    assign is_video = true
+                  elsif media_url contains '.mp4'
+                    assign is_video = true
+                  elsif media_url contains '.webm'
+                    assign is_video = true
+                  elsif media_url contains '.mov'
+                    assign is_video = true
+                  endif
+                -%}
+                {%- if is_video -%}
+                  {%- comment -%}
+                    No poster attribute: the standard field gives us one URL per
+                    item, so there is no thumbnail to pair with this source.
+                    `#t=0.1` asks the browser for the frame a tenth of a second
+                    in, which is what makes the player show the clip instead of
+                    a black rectangle. `preload="metadata"` keeps that cheap —
+                    a review list must not pull down several megabytes of video
+                    nobody pressed play on.
+                  {%- endcomment -%}
+                  <video
+                    class="cited-review__media-item cited-review__media-item--video"
+                    src="{{ media_url }}#t=0.1"
+                    controls
+                    playsinline
+                    preload="metadata"
+                    aria-label="Customer video from a review by {{ r_author | escape }}"
+                  ></video>
+                {%- else -%}
+                  <img
+                    class="cited-review__media-item"
+                    src="{{ media_url }}"
+                    alt="Customer photo from a review by {{ r_author | escape }}"
+                    loading="lazy"
+                    decoding="async"
+                    width="88"
+                    height="88"
+                  >
+                {%- endif -%}
               {%- endfor -%}
             </div>
           {%- endif -%}
@@ -377,6 +421,24 @@
               multiple
             >
             <small>Up to 4 images, 5 MB each.</small>
+          </label>
+
+          {%- comment -%}
+            One video, separate input. A single `accept` list mixing images and
+            video would let someone pick four clips and have three silently
+            dropped server-side, which reads as the upload being broken.
+
+            `video/quicktime` is not optional: it is what iOS sends for a .mov,
+            so leaving it out rejects most phone uploads.
+          {%- endcomment -%}
+          <label class="cited-reviews__field cited-reviews__video">
+            <span class="cited-reviews__field-label">Video <span class="cited-reviews__optional">optional</span></span>
+            <input
+              type="file"
+              name="video"
+              accept="video/mp4,video/quicktime,video/webm"
+            >
+            <small>One video, up to 50 MB. It may take a minute to appear after posting.</small>
           </label>
         {%- endif -%}
 

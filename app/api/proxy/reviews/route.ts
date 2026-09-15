@@ -11,10 +11,15 @@ import {
 } from '@/lib/reviews/create';
 import {
   uploadReviewImage,
+  uploadReviewVideo,
   ALLOWED_IMAGE_TYPES,
   MAX_IMAGE_BYTES,
   MAX_IMAGES_PER_REVIEW,
+  ALLOWED_VIDEO_TYPES,
+  MAX_VIDEO_BYTES,
+  MAX_VIDEOS_PER_REVIEW,
 } from '@/lib/shopify/files';
+import { enqueueMediaBackfill } from '@/jobs/enqueue';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -53,7 +58,7 @@ interface Submission {
 
 async function readSubmission(
   req: NextRequest,
-): Promise<{ fields: Submission; wantsJson: boolean; photos: File[] }> {
+): Promise<{ fields: Submission; wantsJson: boolean; photos: File[]; videos: File[] }> {
   const contentType = req.headers.get('content-type') ?? '';
   const wantsJson =
     contentType.includes('application/json') ||
@@ -61,6 +66,7 @@ async function readSubmission(
 
   let get: (key: string) => string;
   const photos: File[] = [];
+  const videos: File[] = [];
   if (contentType.includes('application/json')) {
     const parsed = (await req.json().catch(() => ({}))) as Record<string, unknown>;
     get = (key) => (typeof parsed[key] === 'string' ? (parsed[key] as string) : String(parsed[key] ?? ''));
@@ -78,11 +84,17 @@ async function readSubmission(
         photos.push(entry);
       }
     }
+    for (const entry of form.getAll('video')) {
+      if (entry instanceof File && entry.size > 0 && videos.length < MAX_VIDEOS_PER_REVIEW) {
+        videos.push(entry);
+      }
+    }
   }
 
   return {
     wantsJson,
     photos,
+    videos,
     fields: {
       productId: get('product_id').trim(),
       rating: Number.parseInt(get('rating'), 10),
@@ -200,6 +212,75 @@ async function attachPhotos(
   return urls;
 }
 
+/**
+ * Store a review video in the merchant's Shopify Files and record it.
+ *
+ * Same contract as attachPhotos — never throws, the review survives a storage
+ * failure — with one difference that is inherent to video: Shopify transcodes
+ * it, so there is no URL to return here. The row is written with `url: null`
+ * and a backfill job resolves it once Shopify reports the file READY.
+ *
+ * That means a video review is briefly a review with no visible video. The
+ * alternative is holding the shopper's submission open for the length of a
+ * transcode, which is worse: they would watch a spinner, give up, and resubmit
+ * into the one-review-per-product constraint.
+ *
+ * Returns the number of videos accepted, not URLs, because there are none yet.
+ */
+async function attachVideo(
+  store: { id: string; shopDomain: string },
+  reviewId: string,
+  videos: File[],
+  startPosition: number,
+): Promise<number> {
+  if (videos.length === 0) return 0;
+
+  const client = new ShopifyClient(store);
+  let accepted = 0;
+  let position = startPosition;
+
+  for (const video of videos.slice(0, MAX_VIDEOS_PER_REVIEW)) {
+    if (!ALLOWED_VIDEO_TYPES.includes(video.type) || video.size > MAX_VIDEO_BYTES) {
+      logger.info(
+        { shop: store.shopDomain, reviewId, type: video.type, size: video.size },
+        'Review video rejected before upload',
+      );
+      continue;
+    }
+
+    try {
+      const uploaded = await uploadReviewVideo(client, {
+        filename: video.name,
+        mimeType: video.type,
+        bytes: Buffer.from(await video.arrayBuffer()),
+      });
+
+      await prisma.reviewMedia.create({
+        data: {
+          storeId: store.id,
+          reviewId,
+          type: 'VIDEO',
+          r2Key: uploaded.fileGid,
+          url: null,
+          bytes: BigInt(video.size),
+          mimeType: video.type,
+          moderation: 'APPROVED',
+          position: position++,
+        },
+      });
+
+      accepted++;
+    } catch (err) {
+      logger.error(
+        { shop: store.shopDomain, reviewId, err: (err as Error).message },
+        'Review video upload failed — review kept without it',
+      );
+    }
+  }
+
+  return accepted;
+}
+
 /** Rendered by Shopify inside the merchant's own theme layout. */
 function liquidResponse(status: number, heading: string, message: string, returnPath: string) {
   const back = returnPath.startsWith('/') ? returnPath : '/';
@@ -231,7 +312,7 @@ export async function POST(req: NextRequest) {
   const limit = await publicRateLimit(req, 'review-submit');
   if (!limit.ok) return limit.response;
 
-  const { fields, wantsJson, photos } = await readSubmission(req);
+  const { fields, wantsJson, photos, videos } = await readSubmission(req);
 
   /*
    * Reviews require a customer account.
@@ -320,6 +401,18 @@ export async function POST(req: NextRequest) {
     // that will not upload is logged and dropped rather than rolled back into
     // "your review could not be saved".
     const photoUrls = await attachPhotos(store, review.id, photos);
+
+    // Video goes after the photos so it takes the next position rather than
+    // fighting them for slot 0, and the backfill is queued with a delay
+    // because asking Shopify for a URL the instant we handed it the bytes is
+    // guaranteed to come back empty.
+    // Offset by the number of photos SUBMITTED, not the number that produced a
+    // URL — a photo still processing has a row but no URL yet, and reusing its
+    // position would make two media items collide once it resolves.
+    const videoCount = await attachVideo(store, review.id, videos, photos.length);
+    if (videoCount > 0) {
+      await enqueueMediaBackfill({ storeId: store.id, reviewId: review.id });
+    }
 
     const pending = review.status !== 'PUBLISHED';
     const message = pending
