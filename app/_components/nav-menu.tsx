@@ -29,6 +29,7 @@ export function NavMenu() {
       </a>
       <a href="/reviews">Reviews</a>
       <a href="/products">Products</a>
+      <a href="/plans">Plans</a>
       <a href="/settings">Settings</a>
     </ui-nav-menu>
   );

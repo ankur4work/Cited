@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import { requireSessionStore, UnauthorizedError } from '@/lib/shopify/require-session';
+import { loadEntitlement, isPaid } from '@/lib/entitlements';
 import { enqueueReviewSyndication } from '@/jobs/enqueue';
 
 export const runtime = 'nodejs';
@@ -35,6 +36,21 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
     }
     throw err;
+  }
+
+  // Replies are a paid feature. Checked on the server, not just hidden in the
+  // UI — a hidden button is a suggestion, and this endpoint is reachable
+  // directly by anyone holding a valid session token for the shop.
+  //
+  // 402 rather than 403: the merchant is permitted, they have simply not paid
+  // for this. That distinction is what lets the client offer an upgrade link
+  // instead of an error.
+  const entitlement = await loadEntitlement(store.id);
+  if (!entitlement || !isPaid(entitlement)) {
+    return NextResponse.json(
+      { error: 'plan_required', message: 'Replying to reviews is available on Pro.' },
+      { status: 402 },
+    );
   }
 
   const body = (await req.json().catch(() => ({}))) as { reply?: unknown };

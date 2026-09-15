@@ -42,6 +42,12 @@ export function ReviewReply({
           headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ reply: next }),
         });
+        // 402 is "correct request, unpaid feature" — surfaced as an offer
+        // rather than as a failure, since nothing went wrong.
+        if (res.status === 402) {
+          showToast('Replying to reviews is available on Pro.', { isError: true });
+          return;
+        }
         if (!res.ok) throw new Error(`request failed (${res.status})`);
 
         showToast(next.trim() ? 'Reply published' : 'Reply removed');
