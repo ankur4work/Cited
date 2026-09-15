@@ -1,11 +1,11 @@
-import Anthropic from '@anthropic-ai/sdk';
-import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
-import * as z from 'zod/v4';
+import OpenAI from 'openai';
+import { zodResponseFormat } from 'openai/helpers/zod';
+import { z } from 'zod';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 
 /**
- * AI review summaries — the first capability that is actually Pro-only.
+ * AI review summaries — the first capability that is actually paid-only.
  *
  * Not a paragraph blob (PLAN.md §4.2). A shopper looking at 214 reviews and a
  * 4.6 average learns nothing; what they want is what people liked, what they
@@ -76,17 +76,20 @@ export class SummarizeError extends Error {
   }
 }
 
-// Claude Haiku 4.5 list price: $1 / MTok input, $5 / MTok output.
+// gpt-5.4-mini list price: $0.75 / MTok input, $4.50 / MTok output.
 // Kept here rather than in env because it is a fact about the model, not a
 // deployment knob — if these drift the fix is a code change with a commit
-// message, not a silently wrong number in someone's .env.
-const INPUT_CENTS_PER_MTOK = 100;
-const OUTPUT_CENTS_PER_MTOK = 500;
+// message, not a silently wrong number in someone's .env. Changing
+// AI_MODEL_BULK to a model on different rates makes these wrong; that is a
+// deliberate tradeoff against making pricing configurable and therefore
+// silently mis-set.
+const INPUT_CENTS_PER_MTOK = 75;
+const OUTPUT_CENTS_PER_MTOK = 450;
 
 /**
  * Cost of one call, in cents, rounded UP.
  *
- * A single Haiku summary costs a small fraction of a cent, and both
+ * A single summary costs a small fraction of a cent, and both
  * `Summary.costCents` and `Store.aiCentsUsedMtd` are integer cents — so honest
  * rounding would record 0 and the monthly budget would never advance, leaving
  * the cap decorative. Ceiling instead: at the $5 default a store gets ~500
@@ -135,13 +138,13 @@ function buildCorpus(reviews: ReviewForSummary[]): string {
     .join('\n');
 }
 
-let cachedClient: Anthropic | null = null;
+let cachedClient: OpenAI | null = null;
 
-function client(): Anthropic {
-  if (!env.ANTHROPIC_API_KEY) {
-    throw new SummarizeError('ANTHROPIC_API_KEY is not configured', false);
+function client(): OpenAI {
+  if (!env.OPENAI_API_KEY) {
+    throw new SummarizeError('OPENAI_API_KEY is not configured', false);
   }
-  cachedClient ??= new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+  cachedClient ??= new OpenAI({ apiKey: env.OPENAI_API_KEY });
   return cachedClient;
 }
 
@@ -164,15 +167,17 @@ export async function summarizeProductReviews(input: {
   const model = env.AI_MODEL_BULK;
   const corpus = buildCorpus(reviews);
 
-  const message = await client().messages.parse({
+  const completion = await client().chat.completions.parse({
     model,
-    // Generous relative to the real output (a few hundred tokens). Truncating
-    // mid-JSON costs the whole call, and unused headroom costs nothing —
-    // output is billed per token produced, not per token allowed.
-    max_tokens: 4096,
-    system: SYSTEM_PROMPT,
-    output_config: { format: zodOutputFormat(ProductSummarySchema) },
+    // `max_completion_tokens`, not `max_tokens`: the gpt-5 family reasons
+    // before answering and rejects the older parameter. The ceiling is
+    // generous relative to the real output (a few hundred tokens) because a
+    // truncated response costs the whole call, while unused headroom costs
+    // nothing — output is billed per token produced, not per token allowed.
+    max_completion_tokens: 4096,
+    response_format: zodResponseFormat(ProductSummarySchema, 'product_summary'),
     messages: [
+      { role: 'system', content: SYSTEM_PROMPT },
       {
         role: 'user',
         content: `Product: ${productTitle}\nReviews (${reviews.length}):\n\n${corpus}`,
@@ -180,23 +185,24 @@ export async function summarizeProductReviews(input: {
     ],
   });
 
+  const choice = completion.choices[0];
+
   // A refusal is a successful HTTP response with no usable content. Treated as
   // terminal: the same corpus will be refused again, so retrying only burns
   // budget on a verdict that will not change.
-  if (message.stop_reason === 'refusal') {
+  if (choice?.message.refusal) {
+    throw new SummarizeError(`Model declined to summarise: ${choice.message.refusal}`, false);
+  }
+
+  const parsed = choice?.message.parsed;
+  if (!parsed) {
     throw new SummarizeError(
-      `Model declined to summarise (${message.stop_details?.category ?? 'unspecified'})`,
-      false,
+      `Model returned no parseable summary (${choice?.finish_reason ?? 'no choice'})`,
     );
   }
 
-  const parsed = message.parsed_output;
-  if (!parsed) {
-    throw new SummarizeError(`Model returned no parseable summary (${message.stop_reason})`);
-  }
-
-  const inputTokens = message.usage.input_tokens;
-  const outputTokens = message.usage.output_tokens;
+  const inputTokens = completion.usage?.prompt_tokens ?? 0;
+  const outputTokens = completion.usage?.completion_tokens ?? 0;
 
   logger.debug(
     { model, reviews: reviews.length, inputTokens, outputTokens },

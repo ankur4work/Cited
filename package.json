@@ -29,7 +29,6 @@
     "prepare": "husky install || true"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.125.0",
     "@aws-sdk/client-s3": "^3.687.0",
     "@aws-sdk/client-ses": "^3.687.0",
     "@aws-sdk/s3-request-presigner": "^3.687.0",
@@ -52,6 +51,7 @@
     "ioredis": "^5.4.1",
     "jose": "^5.9.3",
     "next": "14.2.15",
+    "openai": "^7.15.0",
     "pino": "^9.4.0",
     "pino-pretty": "^11.2.2",
     "prisma": "^5.20.0",

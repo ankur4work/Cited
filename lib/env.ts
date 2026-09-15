@@ -69,9 +69,13 @@ const EnvObject = z.object({
   EMAIL_RATE_PER_STORE_PER_HOUR: z.coerce.number().int().positive().default(500),
 
   // ── AI ─────────────────────────────────────────────────────
-  ANTHROPIC_API_KEY: z.string().optional(),
-  AI_MODEL_BULK: z.string().default('claude-haiku-4-5-20251001'),
-  AI_MODEL_REASONING: z.string().default('claude-sonnet-5'),
+  // Optional: absent means the summary job logs and returns without writing
+  // anything, so a deployment with no key is inert rather than broken.
+  OPENAI_API_KEY: z.string().optional(),
+  // Changing this to a model on different per-token rates makes the pricing
+  // constants in lib/ai/summarize.ts wrong, and the monthly budget with them.
+  AI_MODEL_BULK: z.string().default('gpt-5.4-mini'),
+  AI_MODEL_REASONING: z.string().default('gpt-5.4'),
   // Hard monthly ceiling per store. Free tier gets 0 — an uncapped free
   // tier with AI features is how this product dies (PLAN.md §8).
   AI_BUDGET_CENTS_PER_STORE: z.coerce.number().int().nonnegative().default(500),
@@ -238,8 +242,8 @@ const BUILD_STUB: Env = {
   COMPANY_ADDRESS: 'build stub',
   SEND_SAFETY_GATE_THRESHOLD: 250,
   EMAIL_RATE_PER_STORE_PER_HOUR: 500,
-  AI_MODEL_BULK: 'claude-haiku-4-5-20251001',
-  AI_MODEL_REASONING: 'claude-sonnet-5',
+  AI_MODEL_BULK: 'gpt-5.4-mini',
+  AI_MODEL_REASONING: 'gpt-5.4',
   AI_BUDGET_CENTS_PER_STORE: 500,
   AI_SUMMARY_MIN_REVIEWS: 5,
   AI_SUMMARY_REGEN_DELTA: 5,

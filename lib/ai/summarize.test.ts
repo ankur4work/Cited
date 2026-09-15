@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ProductSummary } from './summarize';
 
 vi.mock('../env', () => ({
-  env: { ANTHROPIC_API_KEY: 'sk-ant-test', AI_MODEL_BULK: 'claude-haiku-4-5-20251001' },
+  env: { OPENAI_API_KEY: 'sk-test', AI_MODEL_BULK: 'gpt-5.4-mini' },
 }));
 vi.mock('../logger', () => ({
   logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -12,8 +12,8 @@ const { estimateCostCents, dropUnsupported, isRenderable } = await import('./sum
 
 describe('estimateCostCents', () => {
   it('prices input and output at their separate rates', () => {
-    // 1M in ($1.00) + 1M out ($5.00) = 600 cents.
-    expect(estimateCostCents(1_000_000, 1_000_000)).toBe(600);
+    // gpt-5.4-mini: 1M in ($0.75) + 1M out ($4.50) = 525 cents.
+    expect(estimateCostCents(1_000_000, 1_000_000)).toBe(525);
   });
 
   it('never records a real call as free', () => {
@@ -28,7 +28,7 @@ describe('estimateCostCents', () => {
   it('only over-states, never under-states', () => {
     const inputTokens = 40_000;
     const outputTokens = 600;
-    const exact = (inputTokens * 100) / 1e6 + (outputTokens * 500) / 1e6;
+    const exact = (inputTokens * 75) / 1e6 + (outputTokens * 450) / 1e6;
     expect(estimateCostCents(inputTokens, outputTokens)).toBeGreaterThanOrEqual(exact);
   });
 });
