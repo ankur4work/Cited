@@ -1,11 +1,11 @@
-# Cited — Product Reviews & AI Visibility
+# Cited: Product Reviews App — Product Reviews & AI Visibility
 #
 # Keep annotations as `#` comments. The CLI validates this file against a
 # closed schema and rejects any unrecognised top-level key, so a `_comment`
 # string here fails `shopify app deploy` outright.
 
 client_id = "d7e7cc14dd8022014fdaff06422f2542"
-name = "Cited"
+name = "Cited: Product Reviews App"
 # App handles are globally unique across every Shopify app, not just this org,
 # and `cited` is already taken — deploy fails with "App handle must be unique".
 # This one appears in merchant-facing URLs

@@ -5,7 +5,7 @@ import { PolarisProvider } from './_components/polaris-provider';
 import { NavMenu } from './_components/nav-menu';
 
 export const metadata: Metadata = {
-  title: 'Cited — Product Reviews & AI Visibility',
+  title: 'Cited: Product Reviews App',
   description:
     'Collect reviews, then make them work in Google and AI shopping assistants — not just on your product page.',
 };
