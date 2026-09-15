@@ -98,7 +98,13 @@ export async function syndicateAggregateProcessor(
           status: 'PUBLISHED',
           metaobjectGid: { not: null },
         },
-        orderBy: { submittedAt: 'desc' },
+        // Smart sorting: most relevant first, recency only as the tie-break.
+        // Newest-first served the reviewer, not the shopper — a one-word
+        // "Great!" from this morning outranked the detailed, photographed,
+        // verified review that forty people found helpful. Stores that have
+        // never been scored have every score at 0, so this degrades to exactly
+        // the previous ordering rather than to something arbitrary.
+        orderBy: [{ relevanceScore: 'desc' }, { submittedAt: 'desc' }],
         take: REVIEW_LIST_LIMIT,
         select: { metaobjectGid: true },
       });

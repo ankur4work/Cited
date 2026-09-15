@@ -26,6 +26,11 @@
   assign has_pros = false
   assign has_cons = false
   assign has_themes = false
+  assign has_highlights = false
+
+  if summary.highlights != blank and summary.highlights.size > 0
+    assign has_highlights = true
+  endif
 
   if summary.pros != blank and summary.pros.size > 0
     assign has_pros = true
@@ -38,7 +43,7 @@
   endif
 -%}
 
-{%- if has_pros or has_cons or has_themes -%}
+{%- if has_pros or has_cons or has_themes or has_highlights -%}
   <div class="cited-summary" role="group" aria-labelledby="cited-summary-title-{{ uid }}">
     <h3 class="cited-summary__title" id="cited-summary-title-{{ uid }}">What buyers say</h3>
 
@@ -92,6 +97,36 @@
             </ul>
           </div>
         {%- endif -%}
+      </div>
+    {%- endif -%}
+
+    {%- comment -%}
+      ── Review highlights ──
+      Verbatim spans, each checked server-side against the review it claims to
+      come from before it was ever stored — a paraphrase here would be words
+      put in a named shopper's mouth on the merchant's storefront, so anything
+      that failed that check never reaches this template.
+
+      <blockquote> and <cite> rather than styled <div>s: these ARE quotations
+      with attribution, and the semantics are what a screen reader and a
+      crawler read.
+    {%- endcomment -%}
+    {%- if has_highlights -%}
+      <div class="cited-summary__highlights">
+        <h4 class="cited-summary__column-title">In their words</h4>
+        {%- for highlight in summary.highlights limit: 4 -%}
+          <blockquote class="cited-summary__quote">
+            <p>{{ highlight.quote | escape }}</p>
+            <cite class="cited-summary__quote-by">
+              {{ highlight.author | default: 'Verified reviewer' | escape }}
+              {%- if highlight.rating != blank -%}
+                <span class="cited-summary__quote-rating">
+                  {%- render 'cited-stars', rating: highlight.rating, scale_max: 5, size: 12 -%}
+                </span>
+              {%- endif -%}
+            </cite>
+          </blockquote>
+        {%- endfor -%}
       </div>
     {%- endif -%}
 

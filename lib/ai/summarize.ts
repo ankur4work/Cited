@@ -41,17 +41,60 @@ const ThemeSchema = z.object({
   mentions: z.number().int(),
 });
 
+/**
+ * A quotable line lifted verbatim from one review.
+ *
+ * `review` is the 1-based index of the review in the corpus we sent, which is
+ * what lets the caller map a highlight back to a real row — and therefore
+ * verify the quote actually occurs in it. A highlight that cannot be traced to
+ * a specific review is discarded rather than displayed.
+ */
+const HighlightSchema = z.object({
+  /** Verbatim span from the review body. Not a paraphrase. */
+  quote: z.string(),
+  /** 1-based index into the reviews supplied, as labelled in the prompt. */
+  review: z.number().int(),
+});
+
 export const ProductSummarySchema = z.object({
   pros: z.array(MentionSchema),
   cons: z.array(MentionSchema),
   themes: z.array(ThemeSchema),
+  highlights: z.array(HighlightSchema),
 });
 
+/** Raw model output. Not what gets stored — see StoredSummary. */
 export type ProductSummary = z.infer<typeof ProductSummarySchema>;
+
+/**
+ * A highlight after verification, carrying who said it.
+ *
+ * The model returns a corpus index; storage keeps the attribution instead, so
+ * the storefront never has to resolve anything and a later change to the review
+ * set cannot silently re-point a quote at a different person.
+ */
+export interface StoredHighlight {
+  quote: string;
+  author: string | null;
+  rating: number;
+}
+
+/** The shape written to Summary.contentJson and read by the theme block. */
+export interface StoredSummary {
+  pros: ProductSummary['pros'];
+  cons: ProductSummary['cons'];
+  themes: ProductSummary['themes'];
+  highlights: StoredHighlight[];
+}
 
 /** What the caller persists. Cost is reported so the budget gate can debit it. */
 export interface SummaryResult {
-  content: ProductSummary;
+  content: StoredSummary;
+  /**
+   * Corpus indexes of the reviews that were quoted, for the relevance boost.
+   * Indexes into the array passed in, so callers can map back to their own ids.
+   */
+  highlightedIndexes: number[];
   model: string;
   costCents: number;
   inputTokens: number;
@@ -62,6 +105,7 @@ export interface ReviewForSummary {
   rating: number;
   title: string | null;
   body: string | null;
+  authorName: string | null;
 }
 
 /** Raised when summarisation cannot proceed. Never surfaced to a shopper. */
@@ -125,7 +169,17 @@ Hard rules:
 
 Themes are the attributes reviewers keep returning to — sizing, quality,
 shipping, value, comfort, accuracy of the listing. Pick the ones this corpus
-actually discusses rather than working from a fixed list.`;
+actually discusses rather than working from a fixed list.
+
+Highlights are up to four short spans copied WORD FOR WORD out of review bodies
+— the sentences that would most help someone deciding. Rules:
+- Copy the text exactly as written, including its wording and punctuation. Do
+  not paraphrase, clean up, summarise, join two sentences, or fix typos. The
+  quote is checked against the original and silently dropped if it does not
+  occur there verbatim.
+- "review" is the bracketed number of the review you took it from.
+- Prefer spans that give a concrete reason over ones that give a verdict.
+- Do not quote anything containing a name, an email address or an order number.`;
 
 function buildCorpus(reviews: ReviewForSummary[]): string {
   return reviews
@@ -204,13 +258,33 @@ export async function summarizeProductReviews(input: {
   const inputTokens = completion.usage?.prompt_tokens ?? 0;
   const outputTokens = completion.usage?.completion_tokens ?? 0;
 
+  const supported = dropUnsupported(parsed);
+  const verified = verifyHighlights(parsed.highlights, reviews);
+
   logger.debug(
-    { model, reviews: reviews.length, inputTokens, outputTokens },
+    {
+      model,
+      reviews: reviews.length,
+      inputTokens,
+      outputTokens,
+      highlightsReturned: parsed.highlights.length,
+      highlightsVerified: verified.length,
+    },
     'Product summary generated',
   );
 
   return {
-    content: dropUnsupported(parsed),
+    content: {
+      pros: supported.pros,
+      cons: supported.cons,
+      themes: supported.themes,
+      highlights: verified.map((h) => ({
+        quote: h.quote,
+        author: reviews[h.index]!.authorName,
+        rating: reviews[h.index]!.rating,
+      })),
+    },
+    highlightedIndexes: verified.map((h) => h.index),
     model,
     costCents: estimateCostCents(inputTokens, outputTokens),
     inputTokens,
@@ -234,10 +308,52 @@ export function dropUnsupported(summary: ProductSummary): ProductSummary {
     pros: supported(summary.pros),
     cons: supported(summary.cons),
     themes: supported(summary.themes),
+    highlights: summary.highlights,
   };
 }
 
+/** Collapse whitespace and case so a quote survives cosmetic differences. */
+function normalise(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, ' ').replace(/[‘’]/g, "'").replace(/[“”]/g, '"').trim();
+}
+
+/**
+ * Keep only highlights that really are quotes.
+ *
+ * The prompt says copy verbatim; this checks. A highlight is displayed in
+ * quotation marks and attributed to a named shopper, so a paraphrase is not a
+ * cosmetic defect — it is words put in a real person's mouth on a merchant's
+ * storefront. Anything that does not occur in the review it claims to come
+ * from is dropped, along with anything pointing at a review index that does
+ * not exist.
+ *
+ * Matching is whitespace- and quote-normalised, because a model reflowing a
+ * line break or straightening an apostrophe is not the failure this guards.
+ */
+export function verifyHighlights(
+  highlights: ProductSummary['highlights'],
+  reviews: ReviewForSummary[],
+): Array<{ quote: string; index: number }> {
+  const haystacks = reviews.map((r) => normalise([r.title ?? '', r.body ?? ''].join(' ')));
+
+  return highlights.flatMap((h) => {
+    const i = h.review - 1;
+    if (i < 0 || i >= haystacks.length) return [];
+
+    const quote = h.quote.trim();
+    // A two-word "quote" is not evidence of anything and will match almost any
+    // review by accident.
+    if (quote.length < 15) return [];
+    if (!haystacks[i]!.includes(normalise(quote))) return [];
+
+    return [{ quote, index: i }];
+  });
+}
+
 /** True when a summary has enough substance to be worth rendering. */
-export function isRenderable(summary: ProductSummary): boolean {
-  return summary.pros.length + summary.cons.length + summary.themes.length > 0;
+export function isRenderable(summary: StoredSummary): boolean {
+  return (
+    summary.pros.length + summary.cons.length + summary.themes.length + summary.highlights.length >
+    0
+  );
 }

@@ -437,3 +437,45 @@
 }
 
 .cited-reviews .cited-summary__dot--on { background: var(--cited-star); }
+
+/* Review highlights — verbatim quotes with attribution. */
+.cited-reviews .cited-summary__highlights {
+  margin-top: var(--cited-gap);
+  padding-top: var(--cited-gap);
+  border-top: 1px solid var(--cited-border);
+  display: grid;
+  gap: 10px;
+}
+
+.cited-reviews .cited-summary__quote {
+  margin: 0;
+  padding: 0 0 0 12px;
+  /* A quote bar rather than a card: these sit inside a bordered summary box
+   * already, and nesting another boxed surface makes the block read as a
+   * stack of unrelated widgets. */
+  border-left: 3px solid var(--cited-star);
+}
+
+.cited-reviews .cited-summary__quote p {
+  margin: 0;
+  font-size: 0.875rem;
+  /* The quotation marks are decoration, so they come from CSS rather than
+   * from the stored text — keeping the database value exactly what the
+   * reviewer wrote, which is what the verbatim check compares against. */
+  quotes: '“' '”' '‘' '’';
+}
+
+.cited-reviews .cited-summary__quote p::before { content: open-quote; }
+.cited-reviews .cited-summary__quote p::after { content: close-quote; }
+
+.cited-reviews .cited-summary__quote-by {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 0.75rem;
+  font-style: normal;
+  color: var(--cited-muted);
+}
+
+.cited-reviews .cited-summary__quote-rating { line-height: 0; }

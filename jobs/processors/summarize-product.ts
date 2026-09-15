@@ -1,4 +1,5 @@
 import type { Job } from 'bullmq';
+import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
@@ -9,8 +10,9 @@ import {
   summarizeProductReviews,
   SummarizeError,
   isRenderable,
-  type ProductSummary,
+  type StoredSummary,
 } from '@/lib/ai/summarize';
+import { relevanceScore } from '@/lib/reviews/relevance';
 import type { AiJobData, AiJobName } from '../queue';
 
 /**
@@ -86,7 +88,18 @@ export async function summarizeProductProcessor(
     where: { storeId, productId, status: 'PUBLISHED' },
     orderBy: { submittedAt: 'desc' },
     take: env.AI_SUMMARY_MAX_REVIEWS,
-    select: { rating: true, title: true, body: true },
+    select: {
+      id: true,
+      rating: true,
+      title: true,
+      body: true,
+      authorName: true,
+      helpfulCount: true,
+      notHelpfulCount: true,
+      verification: true,
+      submittedAt: true,
+      _count: { select: { media: true } },
+    },
   });
 
   // A review row with no title and no body is a bare star rating. It counts
@@ -105,7 +118,12 @@ export async function summarizeProductProcessor(
   try {
     result = await summarizeProductReviews({
       productTitle: product.title,
-      reviews: withText,
+      reviews: withText.map((r) => ({
+        rating: r.rating,
+        title: r.title,
+        body: r.body,
+        authorName: r.authorName,
+      })),
     });
   } catch (err) {
     if (err instanceof SummarizeError && !err.retryable) {
@@ -123,6 +141,12 @@ export async function summarizeProductProcessor(
     data: { aiCentsUsedMtd: { increment: result.costCents } },
   });
 
+  // Smart sorting. Rescored here rather than in its own job because this is the
+  // one moment both inputs are in hand: the deterministic signals just loaded
+  // above, and the model's view of which reviews were worth quoting. One clock
+  // for the whole batch, so the recency term cannot drift mid-loop.
+  await rescore(withText, new Set(result.highlightedIndexes));
+
   if (!isRenderable(result.content)) {
     // Every point the model raised fell below the two-mention floor. That is a
     // legitimate outcome for a corpus with no consensus, and rendering the
@@ -139,13 +163,21 @@ export async function summarizeProductProcessor(
       storeId,
       productId,
       model: result.model,
-      contentJson: result.content,
+      // Prisma's InputJsonValue demands an index signature, which a named
+      // interface does not have. The shape is plain JSON by construction —
+      // it came out of a JSON schema — so the cast asserts what the type
+      // system cannot see rather than papering over a real mismatch.
+      contentJson: result.content as unknown as Prisma.InputJsonObject,
       reviewCountAtGen: publishedCount,
       costCents: result.costCents,
     },
     update: {
       model: result.model,
-      contentJson: result.content,
+      // Prisma's InputJsonValue demands an index signature, which a named
+      // interface does not have. The shape is plain JSON by construction —
+      // it came out of a JSON schema — so the cast asserts what the type
+      // system cannot see rather than papering over a real mismatch.
+      contentJson: result.content as unknown as Prisma.InputJsonObject,
       reviewCountAtGen: publishedCount,
       costCents: result.costCents,
       generatedAt: new Date(),
@@ -161,9 +193,57 @@ export async function summarizeProductProcessor(
       reviews: withText.length,
       pros: result.content.pros.length,
       cons: result.content.cons.length,
+      highlights: result.content.highlights.length,
       costCents: result.costCents,
     },
     'Product summary published',
+  );
+}
+
+interface ScorableRow {
+  id: string;
+  rating: number;
+  body: string | null;
+  helpfulCount: number;
+  notHelpfulCount: number;
+  verification: 'VERIFIED_BUYER' | 'VERIFIED_REVIEWER' | 'UNVERIFIED';
+  submittedAt: Date;
+  _count: { media: number };
+}
+
+/**
+ * Recompute relevance for the reviews that were summarised.
+ *
+ * Only the sampled window is rescored — the newest AI_SUMMARY_MAX_REVIEWS — not
+ * the whole product. Reviews outside it keep whatever score they had, which is
+ * correct: they were not candidates for the storefront list anyway, and
+ * rescoring thousands of rows on every summary regeneration would make the cost
+ * of this feature a function of catalogue age.
+ */
+async function rescore(rows: ScorableRow[], highlighted: Set<number>): Promise<void> {
+  const now = new Date();
+
+  await Promise.all(
+    rows.map((row, i) =>
+      prisma.review.update({
+        where: { id: row.id },
+        data: {
+          relevanceScore: relevanceScore(
+            {
+              rating: row.rating,
+              body: row.body,
+              helpfulCount: row.helpfulCount,
+              notHelpfulCount: row.notHelpfulCount,
+              verification: row.verification,
+              mediaCount: row._count.media,
+              submittedAt: row.submittedAt,
+              highlighted: highlighted.has(i),
+            },
+            now,
+          ),
+        },
+      }),
+    ),
   );
 }
 
@@ -187,7 +267,7 @@ async function retract(input: {
 async function publish(input: {
   storeId: string;
   productGid: string;
-  summary: ProductSummary | null;
+  summary: StoredSummary | null;
 }): Promise<void> {
   const store = await prisma.store.findUnique({
     where: { id: input.storeId },

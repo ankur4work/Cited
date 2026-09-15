@@ -437,6 +437,18 @@ model Review {
   helpfulCount    Int @default(0)
   notHelpfulCount Int @default(0)
 
+  /// Ordering signal for the storefront review list, replacing "newest first".
+  ///
+  /// Mostly deterministic — substance, helpfulness votes, verified purchase,
+  /// media, recency — plus a boost for reviews the summariser quoted as
+  /// highlights, which is the only part an LLM decides. Recomputed whenever a
+  /// product's summary is regenerated; see lib/reviews/relevance.ts.
+  ///
+  /// Deliberately NOT a pure model score: a merchant has to be able to explain
+  /// to a shopper why one review is at the top, and "the model preferred it"
+  /// is not an explanation.
+  relevanceScore Float @default(0)
+
   /// Set when a customers/redact stripped the author identifiers from this
   /// review. The rating and body survive — they are the merchant's product
   /// feedback and deleting them would silently move every aggregate — but the
@@ -458,6 +470,8 @@ model Review {
   votes      ReviewVote[]
 
   @@index([storeId, productId, status, publishedAt(sort: Desc)])
+  /// Serves the smart-sorted storefront list without a scan.
+  @@index([storeId, productId, status, relevanceScore(sort: Desc)])
   @@index([storeId, status, submittedAt(sort: Desc)])
   @@index([storeId, syncStatus])
   @@index([storeId, rating])
