@@ -211,7 +211,7 @@ export async function upsertStoreWithToken(input: StoreUpsertInput): Promise<Sto
  * Idempotent, and never fatal: a store that fails to get a campaign here still
  * installs, and the next authorization creates one.
  */
-async function ensureDefaultCampaign(storeId: string): Promise<void> {
+export async function ensureDefaultCampaign(storeId: string): Promise<void> {
   try {
     const existing = await prisma.requestCampaign.findFirst({
       where: { storeId },

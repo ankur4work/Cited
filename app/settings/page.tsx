@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { env } from '@/lib/env';
 import { resolveEmbeddedSession } from '@/lib/shopify/embedded-session';
+import { ensureDefaultCampaign } from '@/lib/shopify/store';
 import { SessionBootstrap } from '../_components/session-bootstrap';
 import { SettingsView } from '../_components/settings-view';
 import { SessionRecovery } from '../_components/session-recovery';
@@ -24,6 +25,11 @@ export default async function SettingsPage({
     return <ScopeUpgrade shop={session.shop} missing={session.missing} />;
 
   const store = session.store;
+
+  // Stores installed before review requests existed have no campaign row, and
+  // would otherwise see no card at all until they happened to re-authorize.
+  // Idempotent and cheap — it returns on the first query when one exists.
+  await ensureDefaultCampaign(store.id);
 
   const campaign = await prisma.requestCampaign.findFirst({
     where: { storeId: store.id },
