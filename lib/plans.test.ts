@@ -31,6 +31,16 @@ describe('PLAN_TIERS', () => {
     expect(PLAN_TIERS[2]!.inherits).toBe('Pro');
   });
 
+  it('lists video under Pro, not Free', () => {
+    // Enforced in app/api/proxy/reviews (which drops an unentitled upload) and
+    // hinted to the storefront via the shop features metafield. If the listing
+    // said Free, a merchant would advertise something the route refuses.
+    const free = PLAN_TIERS[0]!.features.join(' ').toLowerCase();
+    const pro = PLAN_TIERS[1]!.features.join(' ').toLowerCase();
+    expect(free).not.toContain('video');
+    expect(pro).toContain('video');
+  });
+
   it('does not repeat a feature across tiers', () => {
     // Repeating a Free feature under Pro pads the paid tier with something the
     // merchant already has, which is the kind of listing that earns a refund

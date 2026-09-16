@@ -20,6 +20,7 @@ import {
   MAX_VIDEOS_PER_REVIEW,
 } from '@/lib/shopify/files';
 import { enqueueMediaBackfill } from '@/jobs/enqueue';
+import { loadEntitlement, isPaid } from '@/lib/entitlements';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -406,10 +407,31 @@ export async function POST(req: NextRequest) {
     // fighting them for slot 0, and the backfill is queued with a delay
     // because asking Shopify for a URL the instant we handed it the bytes is
     // guaranteed to come back empty.
-    // Offset by the number of photos SUBMITTED, not the number that produced a
-    // URL — a photo still processing has a row but no URL yet, and reusing its
-    // position would make two media items collide once it resolves.
-    const videoCount = await attachVideo(store, review.id, videos, photos.length);
+    // Video is a paid feature, enforced here rather than by hiding the input.
+    // The storefront flag this reads from is a hint the theme uses to decide
+    // what to OFFER; a merchant who edits their theme to restore the field
+    // reaches this line, and this is where the answer is authoritative.
+    //
+    // Dropped silently on purpose: the shopper is not the one who chose the
+    // plan, and telling them "your review was rejected" over a merchant's
+    // billing tier would cost a review that is otherwise perfectly good. The
+    // text, rating and photos are all kept.
+    const entitlement = await loadEntitlement(store.id);
+    const videoAllowed = entitlement ? isPaid(entitlement) : false;
+
+    let videoCount = 0;
+    if (videos.length > 0 && !videoAllowed) {
+      logger.info(
+        { shop: store.shopDomain, reviewId: review.id },
+        'Review video dropped — store is not on a plan that includes video',
+      );
+    } else {
+      // Offset by the number of photos SUBMITTED, not the number that produced
+      // a URL — a photo still processing has a row but no URL yet, and reusing
+      // its position would make two media items collide once it resolves.
+      videoCount = await attachVideo(store, review.id, videos, photos.length);
+    }
+
     if (videoCount > 0) {
       await enqueueMediaBackfill({ storeId: store.id, reviewId: review.id });
     }

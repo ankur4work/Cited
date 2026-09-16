@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import { verifyWebhookRequest, claimWebhookEvent } from '@/lib/shopify/webhook';
 import { fetchActiveSubscription, planFromSubscription } from '@/lib/shopify/billing';
+import { syncStorefrontFeatures } from '@/lib/shopify/shop-metafields';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -87,6 +88,13 @@ export async function POST(req: NextRequest) {
           },
         }),
       ]);
+
+      // The storefront form gates on this, and it is the only channel it has:
+      // a server-rendered Liquid block cannot ask what plan a store is on.
+      // Never fatal — the proxy route refuses an unentitled upload regardless,
+      // so a stale flag offers an input that then declines, rather than
+      // handing out a paid feature.
+      await syncStorefrontFeatures(store, plan);
 
       logger.info({ shopDomain, from: store.plan, to: plan }, 'Plan changed');
     }

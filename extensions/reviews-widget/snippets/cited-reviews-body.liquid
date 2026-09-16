@@ -59,6 +59,21 @@
   # job for PRO stores only; absent everywhere else, which is why the render
   # below is guarded rather than conditional on any plan flag reaching Liquid.
   assign review_summary = product.metafields.app.summary.value
+
+  # Shop-level feature flags, written by the app when the plan changes. Liquid
+  # has no way to ask what plan a store is on — there is no request to our
+  # server in this path, which is the point of a server-rendered block — so
+  # anything gated by plan has to arrive as data Shopify already holds.
+  #
+  # This decides what the form OFFERS. The proxy route decides what it ACCEPTS,
+  # and that is the check that actually enforces anything: a theme edited to
+  # restore the input gets a rejected upload, not a free feature.
+  assign cited_features = shop.metafields.app.features.value
+  assign video_enabled = false
+  if cited_features.video
+    assign video_enabled = true
+  endif
+
   assign per_page = per_page | default: 10
 
   assign scale_max = 5
@@ -431,6 +446,7 @@
             `video/quicktime` is not optional: it is what iOS sends for a .mov,
             so leaving it out rejects most phone uploads.
           {%- endcomment -%}
+          {%- if video_enabled -%}
           <label class="cited-reviews__field cited-reviews__video">
             <span class="cited-reviews__field-label">Video <span class="cited-reviews__optional">optional</span></span>
             <input
@@ -440,6 +456,7 @@
             >
             <small>One video, up to 50 MB. It may take a minute to appear after posting.</small>
           </label>
+          {%- endif -%}
         {%- endif -%}
 
         {%- comment -%}

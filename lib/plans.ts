@@ -34,7 +34,7 @@ export const PLAN_TIERS: PlanTier[] = [
     priceLabel: 'Free',
     tagline: 'Collect and display reviews, with nothing held back.',
     features: [
-      'Unlimited reviews, photos and video',
+      'Unlimited reviews with photos',
       'Reviews in your page’s real HTML — visible to Google and AI assistants',
       'Verified-purchase badges from real order history',
       'Star ratings in the Shop app and Shopify search',
@@ -50,6 +50,7 @@ export const PLAN_TIERS: PlanTier[] = [
     tagline: 'Turn the reviews you collect into something that sells.',
     inherits: 'Free',
     features: [
+      'Video reviews — shoppers film the product, hosted in your Shopify Files',
       'AI review summaries — pros, cons and sentiment by theme',
       'Review highlights — the most useful quotes, pulled from real reviews',
       'AI smart sorting — most helpful reviews first, not just newest',
