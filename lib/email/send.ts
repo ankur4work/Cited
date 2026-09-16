@@ -43,6 +43,60 @@ export interface SendResult {
 }
 
 /**
+ * Send through Brevo.
+ *
+ * Plain fetch rather than their SDK: this is one POST with a JSON body, and a
+ * dependency whose only job is to build that body is a dependency to keep
+ * patched for no benefit.
+ */
+async function sendViaBrevo(input: SendInput, from: string): Promise<SendResult> {
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'api-key': env.BREVO_API_KEY!,
+      'content-type': 'application/json',
+      accept: 'application/json',
+    },
+    body: JSON.stringify({
+      sender: { email: env.FROM_EMAIL, name: input.fromName ? sanitiseDisplayName(input.fromName) : undefined },
+      to: [{ email: input.to }],
+      replyTo: input.replyTo ? { email: input.replyTo } : undefined,
+      subject: input.subject,
+      htmlContent: input.html,
+      textContent: input.text,
+      tags: input.tags ? Object.values(input.tags).map((v) => v.slice(0, 64)) : undefined,
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    // 4xx describes the request or the recipient and will recur; 429 and 5xx
+    // are worth another attempt. Retrying a rejected address damages sender
+    // reputation for every merchant on the account.
+    const retryable = res.status === 429 || res.status >= 500;
+    throw new EmailError(`brevo ${res.status}: ${body.slice(0, 300)}`, retryable);
+  }
+
+  const json = (await res.json().catch(() => ({}))) as { messageId?: string };
+  if (!json.messageId) throw new EmailError('Brevo accepted the send but returned no messageId');
+
+  // `from` is already folded into the sender object above; named here only so
+  // the SES and Brevo paths share one signature.
+  void from;
+  return { providerId: json.messageId };
+}
+
+interface SendInput {
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+  fromName?: string;
+  replyTo?: string;
+  tags?: Record<string, string>;
+}
+
+/**
  * Send one email.
  *
  * `configurationSet` is what wires SES's bounce and complaint notifications
@@ -50,20 +104,15 @@ export interface SendResult {
  * is retried on the next campaign, and the sender reputation that every other
  * merchant on this account shares degrades quietly.
  */
-export async function sendEmail(input: {
-  to: string;
-  subject: string;
-  html: string;
-  text: string;
-  /** Surfaces in the inbox as the store, not as us. */
-  fromName?: string;
-  replyTo?: string;
-  /** Threaded back to the RequestSend row by the bounce handler. */
-  tags?: Record<string, string>;
-}): Promise<SendResult> {
+export async function sendEmail(input: SendInput): Promise<SendResult> {
   const from = input.fromName
     ? `${sanitiseDisplayName(input.fromName)} <${env.FROM_EMAIL}>`
     : env.FROM_EMAIL;
+
+  // Brevo first when configured. Whichever provider is used, the caller sees
+  // the same result shape and the same EmailError semantics — swapping
+  // providers must never mean revisiting the processor.
+  if (env.BREVO_API_KEY) return sendViaBrevo(input, from);
 
   try {
     const res = await client().send(
@@ -120,8 +169,18 @@ function sanitiseDisplayName(name: string): string {
   return cleaned.length > 0 ? cleaned : 'Reviews';
 }
 
+/** True when SOME provider can actually send. Brevo needs one key; SES needs two. */
 export function emailConfigured(): boolean {
-  const ok = Boolean(env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY);
+  const ok = Boolean(
+    env.BREVO_API_KEY || (env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY),
+  );
   if (!ok) logger.debug('Email not configured — review requests will not send');
   return ok;
+}
+
+/** Which provider a send would use. Logged so a misconfiguration is visible. */
+export function emailProvider(): 'brevo' | 'ses' | 'none' {
+  if (env.BREVO_API_KEY) return 'brevo';
+  if (env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY) return 'ses';
+  return 'none';
 }

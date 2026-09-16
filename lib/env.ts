@@ -58,6 +58,11 @@ const EnvObject = z.object({
   AWS_SECRET_ACCESS_KEY: z.string().optional(),
   SES_CONFIGURATION_SET: z.string().default('cited-reviews'),
   RESEND_API_KEY: z.string().optional(),
+  // Brevo is the default transactional sender: 300/day free permanently, and
+  // setup is an API key plus DNS records rather than IAM users and a manual
+  // sandbox-exit review. SES stays wired as the fallback because it is an
+  // order of magnitude cheaper once volume makes the difference matter.
+  BREVO_API_KEY: z.string().optional(),
 
   FROM_EMAIL: z.string().email().default('no-reply@cited.reviews'),
   SUPPORT_EMAIL: z.string().email().default('support@cited.reviews'),
