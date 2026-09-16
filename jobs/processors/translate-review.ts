@@ -32,7 +32,8 @@ export async function translateReviewProcessor(
   const { storeId, reviewId } = job.data;
   if (!reviewId) throw new Error('ai:translate-review requires reviewId');
 
-  const gate = await checkAiEntitlement(storeId);
+  // Scale, not merely paid: translations are the top tier's own feature.
+  const gate = await checkAiEntitlement(storeId, { requires: 'scale' });
   if (!gate.ok) {
     logger.debug({ storeId, reviewId, reason: gate.reason }, 'Translation skipped — not entitled');
     return;
@@ -111,7 +112,7 @@ export async function translateReviewProcessor(
   for (const locale of targets) {
     // Re-checked inside the loop: a store with many locales could otherwise
     // blow well past its cap in a single job.
-    const budget = await checkAiEntitlement(storeId);
+    const budget = await checkAiEntitlement(storeId, { requires: 'scale' });
     if (!budget.ok) {
       logger.info({ storeId, reviewId, locale, reason: budget.reason }, 'Translation budget spent');
       break;

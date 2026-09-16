@@ -2,9 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Entitlement } from './entitlements';
 
 vi.mock('./env', () => ({ env: { AI_BUDGET_CENTS_PER_STORE: 500 } }));
-vi.mock('./prisma', () => ({ prisma: { store: { findUnique: vi.fn() } } }));
+const findUnique = vi.fn();
+vi.mock('./prisma', () => ({ prisma: { store: { findUnique: () => findUnique() } } }));
 
-const { isPaid, isScale, aiBudgetRemainingCents } = await import('./entitlements');
+const { isPaid, isScale, aiBudgetRemainingCents, checkAiEntitlement } = await import(
+  './entitlements'
+);
 
 function store(overrides: Partial<Entitlement> = {}): Entitlement {
   return {
@@ -15,6 +18,67 @@ function store(overrides: Partial<Entitlement> = {}): Entitlement {
     ...overrides,
   };
 }
+
+describe('checkAiEntitlement', () => {
+  const row = (over: Record<string, unknown> = {}) => ({
+    id: 'store_1',
+    plan: 'PRO',
+    aiCentsUsedMtd: 0,
+    uninstalledAt: null,
+    ...over,
+  });
+
+  it('admits a Pro store to a paid-tier feature', async () => {
+    findUnique.mockResolvedValueOnce(row());
+    await expect(checkAiEntitlement('store_1')).resolves.toMatchObject({ ok: true });
+  });
+
+  it('refuses a Pro store a Scale-only feature', async () => {
+    // Translations sit at the top of the ladder. Without this the $49 tier
+    // would quietly receive the $299 tier's feature.
+    findUnique.mockResolvedValueOnce(row({ plan: 'PRO' }));
+    await expect(checkAiEntitlement('store_1', { requires: 'scale' })).resolves.toEqual({
+      ok: false,
+      reason: 'plan',
+    });
+  });
+
+  it('admits a Scale store to a Scale-only feature', async () => {
+    findUnique.mockResolvedValueOnce(row({ plan: 'SCALE' }));
+    await expect(
+      checkAiEntitlement('store_1', { requires: 'scale' }),
+    ).resolves.toMatchObject({ ok: true });
+  });
+
+  it('refuses a Free store either way', async () => {
+    findUnique.mockResolvedValueOnce(row({ plan: 'FREE' }));
+    await expect(checkAiEntitlement('store_1')).resolves.toEqual({ ok: false, reason: 'plan' });
+  });
+
+  it('refuses an uninstalled store before checking the plan', async () => {
+    findUnique.mockResolvedValueOnce(row({ plan: 'SCALE', uninstalledAt: new Date() }));
+    await expect(checkAiEntitlement('store_1')).resolves.toEqual({
+      ok: false,
+      reason: 'uninstalled',
+    });
+  });
+
+  it('refuses a Pro store that has spent its budget', async () => {
+    findUnique.mockResolvedValueOnce(row({ aiCentsUsedMtd: 500 }));
+    await expect(checkAiEntitlement('store_1')).resolves.toEqual({
+      ok: false,
+      reason: 'ai_budget',
+    });
+  });
+
+  it('never budget-blocks a Scale store', async () => {
+    // Uncapped is what the top tier sells; a spent counter must not gate it.
+    findUnique.mockResolvedValueOnce(row({ plan: 'SCALE', aiCentsUsedMtd: 500_000 }));
+    await expect(
+      checkAiEntitlement('store_1', { requires: 'scale' }),
+    ).resolves.toMatchObject({ ok: true });
+  });
+});
 
 describe('isPaid', () => {
   it('is true for every paid tier', () => {

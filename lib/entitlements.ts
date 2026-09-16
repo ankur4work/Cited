@@ -94,18 +94,31 @@ export interface Allowed {
 }
 
 /**
- * Gate for an AI feature: Pro, installed, and inside the monthly budget.
+ * Gate for an AI feature: installed, on a sufficient plan, and inside budget.
+ *
+ * `requires` is the tier floor. Most AI features need any paid plan; a few sit
+ * at the top of the ladder. Translations are the current example — only a store
+ * publishing more than one locale can use them, which is a larger, usually
+ * international merchant, so the feature is what gives the top tier a reason to
+ * exist beyond a lifted cap.
  *
  * Returns a result rather than throwing. These checks run inside BullMQ
  * processors, where a throw means "retry with backoff" — and a free store is
  * not a transient failure. Retrying it six times would burn the queue on a
  * condition that cannot change without the merchant upgrading.
  */
-export async function checkAiEntitlement(storeId: string): Promise<Allowed | Denied> {
+export async function checkAiEntitlement(
+  storeId: string,
+  options: { requires?: 'paid' | 'scale' } = {},
+): Promise<Allowed | Denied> {
   const entitlement = await loadEntitlement(storeId);
   if (!entitlement) return { ok: false, reason: 'store_missing' };
   if (entitlement.uninstalledAt) return { ok: false, reason: 'uninstalled' };
-  if (!isPaid(entitlement)) return { ok: false, reason: 'plan' };
+
+  const sufficient =
+    options.requires === 'scale' ? isScale(entitlement) : isPaid(entitlement);
+  if (!sufficient) return { ok: false, reason: 'plan' };
+
   if (aiBudgetRemainingCents(entitlement) <= 0) return { ok: false, reason: 'ai_budget' };
 
   return { ok: true, entitlement };
