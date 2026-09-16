@@ -2,6 +2,7 @@ import { prisma } from '../prisma';
 import { logger } from '../logger';
 import { encrypt } from '../crypto';
 import { enqueueSyndicationBackfill } from '@/jobs/enqueue';
+import { syncShopProfile } from './shop-profile';
 import type { Plan, Store } from '@prisma/client';
 
 export interface StoreUpsertInput {
@@ -192,6 +193,10 @@ export async function upsertStoreWithToken(input: StoreUpsertInput): Promise<Sto
     scope: input.scope,
   });
   await ensureDefaultCampaign(store.id);
+  // Fills name, contact email, currency, timezone and country. The shop name
+  // is what a customer sees as the sender of a review request, so an install
+  // that skipped this would send mail from a bare address.
+  await syncShopProfile(store);
   return store;
 }
 

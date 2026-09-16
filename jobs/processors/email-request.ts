@@ -5,6 +5,7 @@ import { decrypt } from '@/lib/crypto';
 import { sendEmail, EmailError, emailConfigured } from '@/lib/email/send';
 import { renderReviewRequest } from '@/lib/email/review-request';
 import { unsubscribeToken } from '@/lib/email/unsubscribe';
+import { syncShopProfile } from '@/lib/shopify/shop-profile';
 import { enqueueReviewRequest } from '../enqueue';
 import type { EmailJobData, EmailJobName } from '../queue';
 
@@ -54,7 +55,14 @@ export async function emailRequestProcessor(
   const [store, campaign, order] = await Promise.all([
     prisma.store.findUnique({
       where: { id: storeId },
-      select: { id: true, shopDomain: true, name: true, email: true, uninstalledAt: true },
+      select: {
+        id: true,
+        shopDomain: true,
+        name: true,
+        email: true,
+        accessToken: true,
+        uninstalledAt: true,
+      },
     }),
     prisma.requestCampaign.findUnique({
       where: { id: campaignId },
@@ -92,6 +100,24 @@ export async function emailRequestProcessor(
   if (suppressed) {
     await prisma.requestSend.update({ where: { id: send.id }, data: { status: 'SUPPRESSED' } });
     return;
+  }
+
+  // Stores installed before the profile sync existed have no name on file, and
+  // will not re-authorize just because we would like them to. Fetched once,
+  // here, so their customers see the shop name rather than a bare address.
+  let shopName = store.name;
+  let replyTo = store.email;
+  if (!shopName) {
+    await syncShopProfile(store);
+    const fresh = await prisma.store.findUnique({
+      where: { id: store.id },
+      select: { name: true, email: true },
+    });
+    shopName = fresh?.name ?? null;
+    // Re-read alongside the name: the sync writes both, and reading a stale
+    // `store.email` here would drop the merchant's reply address on exactly
+    // the installs this backfill exists for.
+    replyTo = fresh?.email ?? null;
   }
 
   const productIds = order.lineItems.map((l) => l.productId).filter((id): id is string => !!id);
@@ -140,7 +166,7 @@ export async function emailRequestProcessor(
 
   const rendered = renderReviewRequest({
     shopDomain: store.shopDomain,
-    shopName: store.name ?? store.shopDomain,
+    shopName: shopName ?? store.shopDomain,
     customerName: order.customerName,
     products,
     unsubscribeToken: unsubscribeToken(storeId, send.emailHash),
@@ -153,11 +179,14 @@ export async function emailRequestProcessor(
       subject: rendered.subject,
       html: rendered.html,
       text: rendered.text,
-      fromName: store.name ?? undefined,
+      // Falls back to the shop's own domain rather than to nothing: a bare
+      // `no-reply@…` in the inbox is both worse for the merchant and more
+      // likely to be reported as spam than a recognisable store name.
+      fromName: shopName ?? store.shopDomain.replace(/\.myshopify\.com$/, ''),
       // Replies go to the merchant. A customer answering a review request is
       // talking to the store, not to us, and routing that to a no-reply
       // address loses a real conversation.
-      replyTo: store.email ?? undefined,
+      replyTo: replyTo ?? undefined,
       tags: { cited_send: send.id, cited_kind: isReminder ? 'reminder' : 'request' },
     });
 
