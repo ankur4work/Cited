@@ -41,6 +41,18 @@ export interface RenderedEmail {
   text: string;
 }
 
+/**
+ * Shop name as it appears mid-sentence.
+ *
+ * Trailing punctuation is stripped because plenty of real shops are called
+ * "Acme Supply Co." or "Something Ltd.", and interpolating that before a full
+ * stop produces "Thanks for shopping with Acme Supply Co.." — a typo in the
+ * first line of an email sent on the merchant's behalf.
+ */
+function inSentence(name: string): string {
+  return name.trim().replace(/[.\s]+$/, '');
+}
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -70,9 +82,11 @@ export function renderReviewRequest(input: ReviewRequestInput): RenderedEmail {
       ? `How is your ${first.title}?`
       : `How was your order from ${shopName}?`;
 
+  const sentenceName = inSentence(shopName);
+
   const intro = isReminder
     ? `We asked a little while back — if you have a minute, other shoppers would find your take genuinely useful.`
-    : `Thanks for shopping with ${escapeHtml(shopName)}. If you have a moment, how did it work out?`;
+    : `Thanks for shopping with ${escapeHtml(sentenceName)}. If you have a moment, how did it work out?`;
 
   const rows = products
     .map((p) => {
@@ -112,7 +126,7 @@ export function renderReviewRequest(input: ReviewRequestInput): RenderedEmail {
           It takes about a minute, and it helps the next person decide.
         </td></tr>
         <tr><td style="padding-top:24px;border-top:1px solid #e5e7eb;font-size:12px;line-height:1.6;color:#9ca3af;">
-          Sent by ${escapeHtml(shopName)}.
+          Sent by ${escapeHtml(sentenceName)}.
           <a href="${unsub}" style="color:#9ca3af;">Unsubscribe from review requests</a>.<br>
           ${escapeHtml(env.COMPANY_ADDRESS)}
         </td></tr>
@@ -126,13 +140,13 @@ export function renderReviewRequest(input: ReviewRequestInput): RenderedEmail {
     '',
     isReminder
       ? 'We asked a little while back — if you have a minute, other shoppers would find your take genuinely useful.'
-      : `Thanks for shopping with ${shopName}. If you have a moment, how did it work out?`,
+      : `Thanks for shopping with ${sentenceName}. If you have a moment, how did it work out?`,
     '',
     ...products.map((p) => `${p.title}\n${productUrl(shopDomain, p.handle)}`),
     '',
     'It takes about a minute, and it helps the next person decide.',
     '',
-    `Sent by ${shopName}.`,
+    `Sent by ${sentenceName}.`,
     `Unsubscribe from review requests: ${unsub}`,
     env.COMPANY_ADDRESS,
   ].join('\n');

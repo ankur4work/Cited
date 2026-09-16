@@ -61,6 +61,17 @@ describe('renderReviewRequest', () => {
     expect(out.html).toContain('/products/a%20b%26c');
   });
 
+  it('does not double the full stop after a shop name ending in one', () => {
+    // "Acme Supply Co." and "Something Ltd." are ordinary shop names, and
+    // interpolating one before a full stop puts a typo in the first line of an
+    // email sent on the merchant's behalf.
+    const out = renderReviewRequest(input({ shopName: 'Acme Supply Co.' }));
+    expect(out.text).toContain('Thanks for shopping with Acme Supply Co.');
+    expect(out.text).not.toContain('Co..');
+    expect(out.html).not.toContain('Co..');
+    expect(out.text).not.toContain('Sent by Acme Supply Co..');
+  });
+
   it('greets without a name when there is none', () => {
     const out = renderReviewRequest(input({ customerName: null }));
     expect(out.text.startsWith('Hi,')).toBe(true);
