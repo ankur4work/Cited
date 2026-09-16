@@ -10,24 +10,60 @@
   --cited-radius: 8px;
   --cited-gap: 16px;
 
+  /*
+   * Derived tones, not new theme settings. A merchant already tunes six
+   * properties; asking for a seventh for "the faint line under a review" is
+   * how a settings panel becomes unusable. These are computed from what they
+   * already chose, so the block stays coherent whatever palette they pick.
+   *
+   * currentColor at low alpha rather than a fixed grey: it reads correctly on
+   * a dark theme, where a hardcoded #f6f6f7 surface would be a bright slab in
+   * the middle of the page.
+   */
+  --cited-surface: color-mix(in srgb, currentColor 4%, transparent);
+  --cited-hairline: color-mix(in srgb, currentColor 12%, transparent);
+
   color: var(--cited-text);
   display: block;
   margin-block: calc(var(--cited-gap) * 2);
+  /* Long review bodies in narrow columns break badly without this. */
+  overflow-wrap: break-word;
+}
+
+/*
+ * Fallback for browsers without color-mix(). Flat values, same intent — the
+ * block degrades to the previous look rather than to transparent borders.
+ */
+@supports not (color: color-mix(in srgb, red 50%, transparent)) {
+  .cited-reviews {
+    --cited-surface: rgba(0, 0, 0, 0.03);
+    --cited-hairline: var(--cited-border);
+  }
 }
 
 .cited-reviews__heading {
-  font-size: 1.25rem;
-  line-height: 1.3;
-  margin: 0 0 var(--cited-gap);
+  font-size: 1.375rem;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  margin: 0 0 calc(var(--cited-gap) * 1.25);
 }
 
+/*
+ * The aggregate is the first thing a shopper reads and the thing they act on,
+ * so it gets a surface of its own rather than sitting flush against the list.
+ * Baseline-aligned, not centre-aligned: a 2.75rem number next to 14px text
+ * centres into a visible wobble.
+ */
 .cited-reviews__summary {
   display: flex;
   align-items: center;
-  gap: calc(var(--cited-gap) * 1.25);
+  gap: calc(var(--cited-gap) * 1.5);
   flex-wrap: wrap;
-  padding-bottom: var(--cited-gap);
-  border-bottom: 1px solid var(--cited-border);
+  padding: calc(var(--cited-gap) * 1.25);
+  border: 1px solid var(--cited-hairline);
+  border-radius: calc(var(--cited-radius) * 1.5);
+  background: var(--cited-surface);
 }
 
 .cited-reviews__score {
@@ -35,44 +71,75 @@
   flex-direction: column;
   align-items: center;
   line-height: 1;
+  /* Keeps the divider straight whether the average is 5 or 4.6. */
+  min-width: 4.5rem;
 }
 
-.cited-reviews__summary-meta { display: grid; gap: 6px; }
+.cited-reviews__summary-meta { display: grid; gap: 8px; }
 
-.cited-reviews__score-value { font-size: 2.75rem; font-weight: 700; line-height: 1; }
+.cited-reviews__score-value {
+  font-size: 3rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  /* 4.6 and 5.0 must occupy the same width or the block shifts on update. */
+  font-variant-numeric: tabular-nums;
+}
 
 .cited-reviews__score-scale {
   font-size: 0.75rem;
   color: var(--cited-muted);
-  margin-top: 4px;
+  margin-top: 6px;
   white-space: nowrap;
 }
 
 .cited-reviews__count { margin: 0; font-size: 0.875rem; color: var(--cited-muted); }
-.cited-reviews__empty { padding: var(--cited-gap) 0; color: var(--cited-muted); }
+
+.cited-reviews__empty {
+  padding: calc(var(--cited-gap) * 1.5);
+  color: var(--cited-muted);
+  text-align: center;
+  border: 1px dashed var(--cited-hairline);
+  border-radius: calc(var(--cited-radius) * 1.5);
+}
 
 .cited-reviews__list {
   list-style: none;
-  margin: 0;
+  margin: calc(var(--cited-gap) * 1.5) 0 0;
   padding: 0;
   display: grid;
-  gap: var(--cited-gap);
+  /* Gap AND padding would double the space between reviews; the separator
+   * needs the padding, so the gap goes to zero. */
+  gap: 0;
 }
 
 .cited-review {
-  padding: var(--cited-gap) 0;
-  border-bottom: 1px solid var(--cited-border);
+  padding: calc(var(--cited-gap) * 1.25) 0;
+  border-bottom: 1px solid var(--cited-hairline);
 }
 
-.cited-review__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.cited-review__title { font-size: 1rem; font-weight: 600; margin: 0; }
+/* No trailing rule above the form — it would read as a broken table edge. */
+.cited-review:last-child { border-bottom: 0; }
+
+.cited-review__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.cited-review__title {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 0;
+  /* Full width on its own line: a title beside stars gets squeezed to two
+   * words on a phone. */
+  flex-basis: 100%;
+  order: 2;
+}
 
 .cited-review__meta {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
-  margin-top: 6px;
+  margin-top: 10px;
   font-size: 0.8125rem;
   color: var(--cited-muted);
 }
@@ -82,13 +149,15 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
-  background: var(--cited-border);
+  background: var(--cited-surface);
+  border: 1px solid var(--cited-hairline);
   color: var(--cited-text);
   font-size: 0.75rem;
   font-weight: 600;
+  line-height: 1;
   flex: none;
 }
 
@@ -104,21 +173,31 @@
 .cited-review__verified {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
+  /* A pill rather than coloured text: at 13px, green type alone is easy to
+   * miss and easy to mistake for a link. */
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(10, 124, 66, 0.08);
   color: #0a7c42;
-  font-weight: 500;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.5;
 }
 
-.cited-review__body { margin-top: 8px; line-height: 1.6; }
+.cited-review__body { margin-top: 10px; line-height: 1.65; }
 
-.cited-review__media { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.cited-review__media { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 
 .cited-review__media-item {
   width: 88px;
   height: 88px;
   object-fit: cover;
   border-radius: var(--cited-radius);
-  border: 1px solid var(--cited-border);
+  border: 1px solid var(--cited-hairline);
+  /* Photos are shopper-supplied and arrive at every aspect ratio; a fixed box
+   * with cover is what keeps a row of them from looking like debris. */
+  background: var(--cited-surface);
 }
 
 /*
@@ -137,26 +216,39 @@
   background: #000;
 }
 
+/*
+ * The merchant's reply is indented and rule-marked rather than boxed, so it
+ * reads as a response to the review above it rather than as a second review.
+ */
 .cited-review__reply {
-  margin-top: 10px;
-  padding: 10px 12px;
-  background: rgba(0, 0, 0, 0.03);
-  border-radius: var(--cited-radius);
+  margin-top: 12px;
+  margin-left: 14px;
+  padding: 10px 14px;
+  border-left: 2px solid var(--cited-hairline);
+  background: var(--cited-surface);
+  border-radius: 0 var(--cited-radius) var(--cited-radius) 0;
   font-size: 0.875rem;
+  line-height: 1.6;
 }
 
-.cited-review__reply-label { font-weight: 600; display: block; margin-bottom: 2px; }
+.cited-review__reply-label {
+  font-weight: 600;
+  display: block;
+  margin-bottom: 3px;
+  font-size: 0.8125rem;
+}
 .cited-review__reply p { margin: 0; }
 
 .cited-reviews__more {
   display: inline-block;
   margin-top: var(--cited-gap);
-  padding: 8px 16px;
-  border: 1px solid var(--cited-border);
-  border-radius: var(--cited-radius);
+  padding: 10px 18px;
+  border: 1px solid var(--cited-hairline);
+  border-radius: 999px;
   color: inherit;
   text-decoration: none;
   font-size: 0.875rem;
+  font-weight: 500;
 }
 
 /*
@@ -164,13 +256,25 @@
  * only layout, spacing and the block's own custom properties are set here, so
  * the form looks like part of the store rather than like a bolted-on widget.
  */
+/*
+ * The form is a distinct surface, not a continuation of the list. A shopper
+ * scrolling past twenty reviews needs a visible "your turn" boundary, and a
+ * hairline alone does not provide one.
+ */
 .cited-reviews__form-wrap {
-  margin-top: calc(var(--cited-gap) * 1.5);
-  padding-top: var(--cited-gap);
-  border-top: 1px solid var(--cited-border);
+  margin-top: calc(var(--cited-gap) * 2);
+  padding: calc(var(--cited-gap) * 1.5);
+  border: 1px solid var(--cited-hairline);
+  border-radius: calc(var(--cited-radius) * 1.5);
+  background: var(--cited-surface);
 }
 
-.cited-reviews__form-heading { font-size: 1rem; font-weight: 600; margin: 0 0 var(--cited-gap); }
+.cited-reviews__form-heading {
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--cited-gap);
+}
 
 .cited-reviews__form { display: grid; gap: var(--cited-gap); max-width: 34rem; }
 
@@ -268,14 +372,18 @@
 .cited-reviews__status[data-tone='error'] { color: #b42318; }
 .cited-reviews__status[data-tone='ok'] { color: #0a7c42; }
 
-.cited-reviews__field { display: grid; gap: 4px; font-size: 0.875rem; }
+.cited-reviews__field { display: grid; gap: 6px; font-size: 0.875rem; }
 .cited-reviews__field small { color: var(--cited-muted); font-size: 0.75rem; }
 
 .cited-reviews__field input,
 .cited-reviews__field textarea {
   font: inherit;
   color: inherit;
-  padding: 8px 10px;
+  padding: 11px 13px;
+  /* Stronger than a hairline: these sit on the form's own tinted surface, and
+   * a faint border there disappears entirely. Transparent background rather
+   * than a fixed white — an opaque white field would carry inherited light
+   * text on a dark theme and be unreadable. */
   border: 1px solid var(--cited-border);
   border-radius: var(--cited-radius);
   background: transparent;
@@ -283,17 +391,45 @@
   box-sizing: border-box;
 }
 
-.cited-reviews__field textarea { resize: vertical; }
+/*
+ * Focus is drawn on the field itself rather than left to the browser default,
+ * which a theme's own reset frequently removes — and an invisible focus ring
+ * makes the form unusable by keyboard.
+ */
+.cited-reviews__field input:focus-visible,
+.cited-reviews__field textarea:focus-visible {
+  outline: 2px solid var(--cited-text);
+  outline-offset: 1px;
+  border-color: transparent;
+}
 
+.cited-reviews__field textarea { resize: vertical; min-height: 6.5rem; }
+
+/*
+ * Outlined, not filled. A filled button needs a foreground colour, and the
+ * only safe source would be the page background — which this block cannot
+ * read. Hardcoding white gives an invisible label on any dark theme, so the
+ * button is drawn entirely in currentColor and fills on hover, which is
+ * correct against any background the theme happens to use.
+ */
 .cited-reviews__submit {
   font: inherit;
+  font-weight: 600;
   justify-self: start;
-  padding: 10px 20px;
-  border: 1px solid currentColor;
-  border-radius: var(--cited-radius);
+  padding: 12px 24px;
+  border: 1.5px solid currentColor;
+  border-radius: 999px;
   background: transparent;
   color: inherit;
   cursor: pointer;
+  line-height: 1.2;
+}
+
+.cited-reviews__submit:hover { background: var(--cited-hairline); }
+
+.cited-reviews__submit:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
 }
 
 /* Honeypot: off-screen for people, still in the DOM for bots to fill. */
@@ -307,13 +443,37 @@
 
 .cited-reviews--notice { max-width: 34rem; }
 
-.cited-stars { display: inline-flex; gap: 1px; line-height: 0; }
+.cited-stars { display: inline-flex; gap: 2px; line-height: 0; }
 .cited-stars svg { display: block; }
-.cited-stars__star { color: var(--cited-border); }
+/* Empty stars use the hairline, not the border colour: at the sizes these
+ * render, a solid grey star competes with the filled ones for attention. */
+.cited-stars__star { color: var(--cited-hairline); }
 .cited-stars__star--on { color: var(--cited-star); }
 
+/*
+ * Narrow columns. The block is routinely placed inside a product sidebar as
+ * well as a full-width section, and it has no way to know which — so the
+ * breakpoint is on the container's own rendered width where supported, and
+ * falls back to the viewport where it is not.
+ */
+@media (max-width: 540px) {
+  .cited-reviews__summary {
+    gap: var(--cited-gap);
+    padding: var(--cited-gap);
+  }
+  .cited-reviews__score-value { font-size: 2.5rem; }
+  .cited-reviews__form-wrap { padding: var(--cited-gap); }
+  .cited-review__media-item { width: 72px; height: 72px; }
+  .cited-review__media-item--video { width: 128px; height: 72px; }
+}
+
 @media (prefers-reduced-motion: no-preference) {
-  .cited-reviews__more { transition: background-color 120ms ease; }
+  .cited-reviews__more,
+  .cited-reviews__submit {
+    transition: background-color 120ms ease, opacity 120ms ease;
+  }
+  .cited-review__media-item { transition: transform 140ms ease; }
+  .cited-review__media-item:hover { transform: scale(1.03); }
 }
 
 /*
