@@ -191,7 +191,53 @@ export async function upsertStoreWithToken(input: StoreUpsertInput): Promise<Sto
     shopDomain: store.shopDomain,
     scope: input.scope,
   });
+  await ensureDefaultCampaign(store.id);
   return store;
+}
+
+/**
+ * Give every store a review request campaign, switched OFF.
+ *
+ * Without a campaign row the scheduler has nothing to iterate and the feature
+ * is silently absent — a merchant would look for review requests in settings,
+ * find a screen configuring nothing, and reasonably conclude it was broken.
+ *
+ * `enabled: false` is the important half. Sending on behalf of a merchant who
+ * has not read the email, set the delay, or agreed to any of it is exactly the
+ * competitor failure this product exists to avoid (PLAN.md §2, W4). The row
+ * exists so the settings screen has something to edit; the merchant decides
+ * whether it ever sends.
+ *
+ * Idempotent, and never fatal: a store that fails to get a campaign here still
+ * installs, and the next authorization creates one.
+ */
+async function ensureDefaultCampaign(storeId: string): Promise<void> {
+  try {
+    const existing = await prisma.requestCampaign.findFirst({
+      where: { storeId },
+      select: { id: true },
+    });
+    if (existing) return;
+
+    await prisma.requestCampaign.create({
+      data: {
+        storeId,
+        name: 'Review request',
+        trigger: 'ORDER_FULFILLED',
+        // Seven days after fulfilment: long enough that the parcel has
+        // plausibly arrived and been used, short enough that the purchase is
+        // still recent enough to have an opinion about.
+        delayHours: 168,
+        subject: 'How did it work out?',
+        enabled: false,
+      },
+    });
+  } catch (err) {
+    logger.warn(
+      { storeId, err: (err as Error).message },
+      'Could not create the default review request campaign',
+    );
+  }
 }
 
 /*

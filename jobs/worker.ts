@@ -11,6 +11,9 @@ import {
   type SyndicationJobName,
   type AiJobData,
   type AiJobName,
+  type EmailJobData,
+  type EmailJobName,
+  emailQueue,
 } from './queue';
 import { compliancePurgeProcessor } from './processors/compliance-purge';
 import { retentionSweepProcessor } from './processors/retention-sweep';
@@ -23,6 +26,8 @@ import { syndicateBackfillProcessor } from './processors/syndicate-backfill';
 import { summarizeProductProcessor } from './processors/summarize-product';
 import { mediaBackfillProcessor } from './processors/media-backfill';
 import { translateReviewProcessor } from './processors/translate-review';
+import { emailScheduleProcessor } from './processors/email-schedule';
+import { emailRequestProcessor } from './processors/email-request';
 import { moveToDlq } from './dlq';
 import { logger } from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
@@ -208,6 +213,50 @@ aiWorker.on('failed', async (job, err) => {
   }
 });
 
+// ── Review request email ─────────────────────────────────────
+// Concurrency 3: these send mail, and the constraint is the merchant's SES
+// reputation rather than our CPU. The per-store hourly cap does the real
+// limiting; this just stops one store's backlog monopolising the worker.
+
+type EmailHandler = (job: Job<EmailJobData, unknown, EmailJobName>) => Promise<void>;
+
+const emailHandlers: Record<EmailJobName, EmailHandler> = {
+  'email:schedule-batch': emailScheduleProcessor as EmailHandler,
+  'email:request': emailRequestProcessor,
+  'email:reminder': emailRequestProcessor,
+};
+
+const emailWorker = new Worker<EmailJobData, unknown, EmailJobName>(
+  QUEUES.EMAIL,
+  async (job) => {
+    const handler = emailHandlers[job.name];
+    if (!handler) throw new Error(`No handler for job name ${job.name}`);
+    return handler(job);
+  },
+  { connection, concurrency: 3 },
+);
+
+emailWorker.on('failed', async (job, err) => {
+  if (!job) return;
+  logger.error(
+    {
+      queue: QUEUES.EMAIL,
+      name: job.name,
+      jobId: job.id,
+      storeId: job.data?.storeId,
+      attempt: job.attemptsMade,
+      err: err.message,
+    },
+    'Email job failed',
+  );
+
+  if (job.attemptsMade >= (job.opts.attempts ?? 1)) {
+    await moveToDlq(job as Job<{ storeId: string }>, err).catch((e) =>
+      logger.error({ err: (e as Error).message }, 'Failed to move job to DLQ'),
+    );
+  }
+});
+
 type MaintenanceHandler = (
   job: Job<MaintenanceJobData, unknown, MaintenanceJobName>,
 ) => Promise<void>;
@@ -305,6 +354,17 @@ async function scheduleRecurringJobs(): Promise<void> {
     { repeat: { pattern: '*/5 * * * *' }, jobId: 'media:backfill:sweep' },
   );
   logger.info('Media URL backfill scheduled (every 5 minutes)');
+
+  // Review request sweep. Every 15 minutes rather than continuously: the delay
+  // before a request is measured in days, so a quarter-hour of latency is
+  // invisible to a customer, and a sweep that finds nothing costs one indexed
+  // query per enabled campaign.
+  await emailQueue.add(
+    'email:schedule-batch',
+    {} as never,
+    { repeat: { pattern: '*/15 * * * *' }, jobId: 'email:schedule-batch:sweep' },
+  );
+  logger.info('Review request sweep scheduled (every 15 minutes)');
 }
 
 void scheduleRecurringJobs().catch((err) =>
@@ -312,7 +372,7 @@ void scheduleRecurringJobs().catch((err) =>
 );
 
 logger.info(
-  { queues: [QUEUES.INGESTION, QUEUES.SYNDICATION, QUEUES.AI, QUEUES.MAINTENANCE] },
+  { queues: [QUEUES.INGESTION, QUEUES.SYNDICATION, QUEUES.AI, QUEUES.EMAIL, QUEUES.MAINTENANCE] },
   'Cited worker started',
 );
 
@@ -330,6 +390,7 @@ async function shutdown(signal: string): Promise<void> {
       ingestionWorker.close(),
       syndicationWorker.close(),
       aiWorker.close(),
+      emailWorker.close(),
       maintenanceWorker.close(),
     ]);
     await prisma.$disconnect();

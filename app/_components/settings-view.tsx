@@ -2,6 +2,7 @@
 
 import { Badge, BlockStack, Card, InlineStack, Layout, Page, Text } from '@shopify/polaris';
 import { SettingsForm } from './settings-form';
+import { CampaignSettings, type CampaignRow } from './campaign-settings';
 
 export function SettingsView({
   shopDomain,
@@ -12,6 +13,7 @@ export function SettingsView({
   accessTokenExpiresAt,
   analyticsPixelEnabled,
   gdprMode,
+  campaign,
 }: {
   shopDomain: string;
   plan: string;
@@ -21,10 +23,23 @@ export function SettingsView({
   accessTokenExpiresAt: Date | null;
   analyticsPixelEnabled: boolean;
   gdprMode: boolean;
+  /** Null only if the default campaign could not be created at install. */
+  campaign: CampaignRow | null;
 }) {
   return (
     <Page title="Settings" subtitle={shopDomain}>
       <Layout>
+        {/*
+          First on the page, above the privacy toggles. Collecting reviews is
+          the thing a new merchant needs to do before anything else in this app
+          has data to work with.
+        */}
+        {campaign && (
+          <Layout.Section>
+            <CampaignSettings campaign={campaign} />
+          </Layout.Section>
+        )}
+
         <Layout.Section>
           <SettingsForm
             analyticsPixelEnabled={analyticsPixelEnabled}

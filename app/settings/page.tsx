@@ -1,3 +1,5 @@
+import { prisma } from '@/lib/prisma';
+import { env } from '@/lib/env';
 import { resolveEmbeddedSession } from '@/lib/shopify/embedded-session';
 import { SessionBootstrap } from '../_components/session-bootstrap';
 import { SettingsView } from '../_components/settings-view';
@@ -23,6 +25,34 @@ export default async function SettingsPage({
 
   const store = session.store;
 
+  const campaign = await prisma.requestCampaign.findFirst({
+    where: { storeId: store.id },
+    select: {
+      id: true,
+      enabled: true,
+      delayHours: true,
+      subject: true,
+      reminderCount: true,
+      confirmedAt: true,
+    },
+  });
+
+  // How many orders a first send would actually reach. Counted with the same
+  // predicate the scheduler uses, so the number on screen is the number that
+  // would be emailed — a warning that says "some" teaches a merchant nothing.
+  const pendingCount = campaign
+    ? await prisma.order.count({
+        where: {
+          storeId: store.id,
+          requestScheduledAt: null,
+          cancelledAt: null,
+          refundedAt: null,
+          customerEmailHash: { not: null },
+          fulfilledAt: { not: null },
+        },
+      })
+    : 0;
+
   return (
     <SettingsView
       shopDomain={store.shopDomain}
@@ -33,6 +63,11 @@ export default async function SettingsPage({
       accessTokenExpiresAt={store.accessTokenExpiresAt}
       analyticsPixelEnabled={store.analyticsPixelEnabled}
       gdprMode={store.gdprMode}
+      campaign={
+        campaign
+          ? { ...campaign, pendingCount, safetyThreshold: env.SEND_SAFETY_GATE_THRESHOLD }
+          : null
+      }
     />
   );
 }
