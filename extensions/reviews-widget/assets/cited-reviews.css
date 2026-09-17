@@ -25,7 +25,7 @@
 
   color: var(--cited-text);
   display: block;
-  margin-block: calc(var(--cited-gap) * 2);
+  margin-block: calc(var(--cited-gap) * 1.25);
   /* Long review bodies in narrow columns break badly without this. */
   overflow-wrap: break-word;
 }
@@ -42,11 +42,11 @@
 }
 
 .cited-reviews__heading {
-  font-size: 1.375rem;
+  font-size: 1rem;
   font-weight: 600;
   line-height: 1.25;
   letter-spacing: -0.01em;
-  margin: 0 0 calc(var(--cited-gap) * 1.25);
+  margin: 0 0 calc(var(--cited-gap) * 0.5);
 }
 
 /*
@@ -57,31 +57,41 @@
  */
 .cited-reviews__summary {
   display: flex;
-  align-items: center;
-  gap: calc(var(--cited-gap) * 1.5);
+  align-items: baseline;
+  gap: 10px;
   flex-wrap: wrap;
-  padding: calc(var(--cited-gap) * 1.25);
+  padding: calc(var(--cited-gap) * 0.625) calc(var(--cited-gap) * 0.75);
   border: 1px solid var(--cited-hairline);
-  border-radius: calc(var(--cited-radius) * 1.5);
+  border-radius: var(--cited-radius);
   background: var(--cited-surface);
 }
 
+/*
+ * One line, not a panel. This previously stacked a 3rem numeral above a star
+ * row above the count, in a card with 1.25× padding — roughly 120px of height
+ * to carry "5.0, five stars, 2 reviews". On a product page the block sits in
+ * the buy column, where that much furniture pushes the price and the add-to-
+ * cart button below the fold. Everything now reads across a single baseline.
+ */
 .cited-reviews__score {
   display: flex;
-  flex-direction: column;
-  align-items: center;
+  align-items: baseline;
+  gap: 5px;
   line-height: 1;
-  /* Keeps the divider straight whether the average is 5 or 4.6. */
-  min-width: 4.5rem;
 }
 
-.cited-reviews__summary-meta { display: grid; gap: 8px; }
+.cited-reviews__summary-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 
 .cited-reviews__score-value {
-  font-size: 3rem;
+  font-size: 1.25rem;
   font-weight: 700;
   line-height: 1;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
   /* 4.6 and 5.0 must occupy the same width or the block shifts on update. */
   font-variant-numeric: tabular-nums;
 }
@@ -89,7 +99,6 @@
 .cited-reviews__score-scale {
   font-size: 0.75rem;
   color: var(--cited-muted);
-  margin-top: 6px;
   white-space: nowrap;
 }
 
@@ -262,19 +271,20 @@
  * hairline alone does not provide one.
  */
 .cited-reviews__form-wrap {
-  margin-top: calc(var(--cited-gap) * 2);
-  padding: calc(var(--cited-gap) * 1.5);
+  margin-top: var(--cited-gap);
+  padding: calc(var(--cited-gap) * 0.75);
   border: 1px solid var(--cited-hairline);
-  border-radius: calc(var(--cited-radius) * 1.5);
+  border-radius: var(--cited-radius);
   background: var(--cited-surface);
 }
 
 .cited-reviews__form-heading {
-  font-size: 1.125rem;
+  font-size: 0.9375rem;
   font-weight: 600;
   letter-spacing: -0.01em;
-  margin: 0 0 var(--cited-gap);
+  margin: 0 0 calc(var(--cited-gap) * 0.5);
 }
+
 
 .cited-reviews__form { display: grid; gap: var(--cited-gap); max-width: 34rem; }
 
@@ -355,16 +365,32 @@
   box-sizing: border-box;
 }
 
+/*
+ * Signed out, this said "you cannot use this yet" across three stacked rows
+ * inside 1.5× padding, which made it the tallest thing in the whole block.
+ * One row now: the reason on the left, the action on the right, wrapping only
+ * when the column is genuinely too narrow.
+ */
 .cited-reviews__signin {
-  display: grid;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 10px;
-  justify-items: start;
-  font-size: 0.875rem;
+  flex-wrap: wrap;
+  font-size: 0.8125rem;
   color: var(--cited-muted);
 }
 
 .cited-reviews__signin p { margin: 0; }
-.cited-reviews__signin a { text-decoration: none; }
+
+.cited-reviews__signin a {
+  text-decoration: none;
+  /* Secondary by weight: signing in is a detour, not the goal of the page. */
+  padding: 7px 14px;
+  font-size: 0.8125rem;
+  border-width: 1px;
+  white-space: nowrap;
+}
 
 .cited-reviews__actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 
