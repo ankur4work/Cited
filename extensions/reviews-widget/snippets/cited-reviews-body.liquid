@@ -76,9 +76,17 @@
 
   assign per_page = per_page | default: 10
 
+  # `| floor`, not `| plus: 0`. The rating metafield stores scale_max as "5.0",
+  # and `plus` yields the FLOAT 5.0 — which Liquid renders as "out of 5.0" and,
+  # far worse, cannot be used as a range bound: `(1..5.0)` calls Integer("5.0"),
+  # which raises "invalid integer". The star loop then emitted nothing at all,
+  # so every rating on every storefront rendered with no stars.
   assign scale_max = 5
   if rating_field != blank and rating_field.value.scale_max != blank
-    assign scale_max = rating_field.value.scale_max | plus: 0
+    assign scale_max = rating_field.value.scale_max | floor
+  endif
+  if scale_max < 1
+    assign scale_max = 5
   endif
 
   assign has_reviews = false
@@ -125,7 +133,7 @@
       </div>
 
       <div class="cited-reviews__summary-meta">
-        {%- render 'cited-stars', rating: rating_avg, scale_max: scale_max, size: 22 -%}
+        {%- render 'cited-stars', rating: rating_avg, scale_max: scale_max, size: 16 -%}
         <p class="cited-reviews__count">
           {%- if rating_count == 1 -%}
             Based on 1 review

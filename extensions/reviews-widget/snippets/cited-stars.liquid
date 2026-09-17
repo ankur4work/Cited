@@ -15,8 +15,16 @@
 
 {%- liquid
   assign r = rating | default: 0 | times: 1.0
-  assign max = scale_max | default: 5 | plus: 0
-  assign px = size | default: 16 | plus: 0
+  # Both of these are range/attribute bounds and MUST be integers. A caller
+  # passing the metafield's "5.0" through unfloored makes `(1..max)` raise
+  # "invalid integer" and this snippet render an empty span — silently, on
+  # every storefront. Floored here as well as at the call site so the snippet
+  # is safe whoever calls it.
+  assign max = scale_max | default: 5 | floor
+  if max < 1
+    assign max = 5
+  endif
+  assign px = size | default: 16 | floor
   assign pct = 0
   if max > 0
     assign pct = r | divided_by: max | times: 100

@@ -255,8 +255,15 @@ const REVIEW_LIST_SET = /* GraphQL */ `
  * average and never a single word of what anyone wrote.
  *
  * So the app maintains the link: an app-owned, storefront-readable list of
- * product_review references, newest first. `$app:` scopes it to this app's
- * reserved namespace, where no other app or merchant edit can collide with it.
+ * product_review references, newest first. `$app` is this app's reserved
+ * namespace, where no other app or merchant edit can collide with it.
+ *
+ * The namespace is `$app`, NOT `$app:cited`. A named reserved namespace is a
+ * different namespace: Shopify exposes `$app` to Liquid as `metafields.app`,
+ * while `$app:cited` would be `metafields.app--cited`. The block reads
+ * `product.metafields.app.reviews`, so writing the suffixed form published
+ * every review into a namespace no template on any storefront was reading —
+ * the aggregate rendered and the review list was permanently empty.
  */
 export async function setProductReviewList(
   client: ShopifyClient,
@@ -270,7 +277,7 @@ export async function setProductReviewList(
     metafields: [
       {
         ownerId: input.productGid,
-        namespace: '$app:cited',
+        namespace: '$app',
         key: 'reviews',
         type: 'list.metaobject_reference',
         value: JSON.stringify(input.metaobjectGids.slice(0, REVIEW_LIST_LIMIT)),
@@ -335,7 +342,7 @@ export async function setProductSummaryMetafield(
     metafields: [
       {
         ownerId: input.productGid,
-        namespace: '$app:cited',
+        namespace: '$app',
         key: 'summary',
         type: 'json',
         // `null` is not a valid metafield value, so an empty object is the

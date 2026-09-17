@@ -56,7 +56,7 @@ export async function setStorefrontFeatures(
     metafields: [
       {
         ownerId: shopId,
-        namespace: '$app:cited',
+        namespace: '$app',
         key: 'features',
         type: 'json',
         value: JSON.stringify(features),
