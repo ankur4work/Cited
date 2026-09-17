@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import { requireSessionStore, UnauthorizedError } from '@/lib/shopify/require-session';
+import { isPaid } from '@/lib/entitlements';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -9,9 +10,10 @@ export const dynamic = 'force-dynamic';
 /**
  * Review request campaign settings.
  *
- * Free on every plan. A reviews app whose free tier cannot ask for reviews
- * cannot demonstrate itself, and the incumbent gives requests away — gating
- * collection would lose the comparison before any paid feature was reached.
+ * Paid capability (decided 2026-09-17). Pro sends up to REVIEW_REQUEST_CAP_PRO
+ * a month, Scale is uncapped, Free cannot enable the campaign at all. Free
+ * still collects and displays reviews without limit — it just cannot solicit
+ * them by email.
  *
  * `confirmedAt` is the send-safety gate: above SEND_SAFETY_GATE_THRESHOLD
  * pending orders the scheduler refuses to send until a merchant has explicitly
@@ -49,7 +51,15 @@ export async function POST(req: NextRequest) {
 
   const data: Record<string, unknown> = {};
 
-  if (typeof body.enabled === 'boolean') data.enabled = body.enabled;
+  // Turning ON requires a paid plan; turning OFF never does. A merchant who
+  // downgrades must always be able to stop sending, and refusing that because
+  // their plan lapsed would strand a campaign in the on position.
+  if (typeof body.enabled === 'boolean') {
+    if (body.enabled && !isPaid(store)) {
+      return NextResponse.json({ error: 'review requests require a paid plan' }, { status: 402 });
+    }
+    data.enabled = body.enabled;
+  }
 
   if (typeof body.delayHours === 'number') {
     // Floor of 1 hour, ceiling of 30 days. Below an hour the parcel has not

@@ -1,4 +1,5 @@
 import type { Plan } from '@prisma/client';
+import { env } from '@/lib/env';
 
 /**
  * The plan ladder, as merchants see it.
@@ -47,9 +48,10 @@ export const PLAN_TIERS: PlanTier[] = [
     invoiceName: 'pro',
     name: 'Pro',
     priceLabel: '$49/month',
-    tagline: 'Turn the reviews you collect into something that sells.',
+    tagline: 'Ask for reviews automatically, and make them sell.',
     inherits: 'Free',
     features: [
+      `Review request emails — up to ${env.REVIEW_REQUEST_CAP_PRO.toLocaleString()} a month, sent as your store`,
       'Video reviews — shoppers film the product, hosted in your Shopify Files',
       'AI review summaries — pros, cons and sentiment by theme',
       'Review highlights — the most useful quotes, pulled from real reviews',
@@ -62,9 +64,10 @@ export const PLAN_TIERS: PlanTier[] = [
     invoiceName: 'scale',
     name: 'Scale',
     priceLabel: '$299/month',
-    tagline: 'For stores selling in more than one language.',
+    tagline: 'For stores at volume, and selling in more than one language.',
     inherits: 'Pro',
     features: [
+      'Unlimited review request emails — no monthly cap',
       'AI translations into every language your store publishes',
       'Unlimited AI usage — no monthly processing cap',
       'Priority support',

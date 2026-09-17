@@ -25,6 +25,11 @@ export interface CampaignRow {
   /** Orders currently waiting, used to warn before a large first batch. */
   pendingCount: number;
   safetyThreshold: number;
+  /** False on Free — the whole card is read-only and shows an upgrade prompt. */
+  entitled: boolean;
+  /** Requests sent this calendar month, and the ceiling. Null when uncapped. */
+  usedThisMonth: number;
+  monthlyCap: number | null;
 }
 
 const DELAYS = [
@@ -96,16 +101,22 @@ export function CampaignSettings({ campaign }: { campaign: CampaignRow }) {
             </InlineStack>
             <Text as="p" variant="bodySm" tone="subdued">
               Email customers after their order is fulfilled, asking them to review what they
-              bought. Included on every plan.
+              bought.{' '}
+              {!campaign.entitled
+                ? 'Available on Pro and Scale.'
+                : campaign.monthlyCap === null
+                  ? 'Unlimited on your plan.'
+                  : `${campaign.usedThisMonth.toLocaleString()} of ${campaign.monthlyCap.toLocaleString()} sent this month.`}
             </Text>
           </BlockStack>
           <Button
             variant={enabled ? undefined : 'primary'}
             loading={saving}
-            // Turning ON is blocked while a large first batch is unconfirmed.
-            // Turning OFF is never blocked — a merchant must always be able to
-            // stop sending immediately.
-            disabled={!enabled && needsConfirmation}
+            // Turning ON is blocked while a large first batch is unconfirmed,
+            // and on a plan that does not include requests at all. Turning OFF
+            // is never blocked — a merchant must always be able to stop sending
+            // immediately, including after a downgrade.
+            disabled={!enabled && (needsConfirmation || !campaign.entitled)}
             onClick={() => {
               const next = !enabled;
               setEnabled(next);
@@ -115,6 +126,34 @@ export function CampaignSettings({ campaign }: { campaign: CampaignRow }) {
             {enabled ? 'Turn off' : 'Turn on'}
           </Button>
         </InlineStack>
+
+        {!campaign.entitled && (
+          <Banner tone="info" title="Review requests are on Pro and Scale">
+            <BlockStack gap="200">
+              <Text as="p" variant="bodySm">
+                Your store keeps collecting and displaying reviews without limit. Asking customers
+                for them by email needs Pro, which includes a monthly allowance, or Scale, which is
+                uncapped.
+              </Text>
+              <InlineStack>
+                <Button size="slim" url="/plans">
+                  See plans
+                </Button>
+              </InlineStack>
+            </BlockStack>
+          </Banner>
+        )}
+
+        {campaign.entitled &&
+          campaign.monthlyCap !== null &&
+          campaign.usedThisMonth >= campaign.monthlyCap && (
+            <Banner tone="warning" title="Monthly allowance used">
+              <Text as="p" variant="bodySm">
+                You have sent all {campaign.monthlyCap.toLocaleString()} review requests included
+                this month. Sending resumes automatically on the 1st; Scale removes the cap.
+              </Text>
+            </Banner>
+          )}
 
         {needsConfirmation && (
           <Banner tone="warning" title="Confirm before the first send">
@@ -140,6 +179,7 @@ export function CampaignSettings({ campaign }: { campaign: CampaignRow }) {
           label="When to ask"
           options={DELAYS}
           value={delay}
+          disabled={!campaign.entitled}
           onChange={(value) => {
             setDelay(value);
             void save({ delayHours: Number(value) });
@@ -152,6 +192,7 @@ export function CampaignSettings({ campaign }: { campaign: CampaignRow }) {
           onChange={setSubject}
           onBlur={() => subject.trim() && subject !== campaign.subject && void save({ subject })}
           autoComplete="off"
+          disabled={!campaign.entitled}
           maxLength={200}
           helpText="Shown in the inbox. The email itself names the products they bought."
         />
@@ -163,6 +204,7 @@ export function CampaignSettings({ campaign }: { campaign: CampaignRow }) {
             { label: 'One reminder a week later', value: '1' },
           ]}
           value={reminder}
+          disabled={!campaign.entitled}
           onChange={(value) => {
             setReminder(value);
             void save({ reminderCount: Number(value) });

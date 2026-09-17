@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { env } from '@/lib/env';
 import { resolveEmbeddedSession } from '@/lib/shopify/embedded-session';
 import { ensureDefaultCampaign } from '@/lib/shopify/store';
+import { isPaid, reviewRequestCapFor, monthStartUtc } from '@/lib/entitlements';
 import { SessionBootstrap } from '../_components/session-bootstrap';
 import { SettingsView } from '../_components/settings-view';
 import { SessionRecovery } from '../_components/session-recovery';
@@ -59,6 +60,22 @@ export default async function SettingsPage({
       })
     : 0;
 
+  // Requests are a paid capability, capped monthly on Pro and uncapped on
+  // Scale. Counted with the same predicate and window the scheduler enforces,
+  // so the number on screen is the number the cap is actually measured against.
+  const entitled = isPaid(store);
+  const cap = reviewRequestCapFor(store);
+  const usedThisMonth =
+    entitled && Number.isFinite(cap)
+      ? await prisma.requestSend.count({
+          where: {
+            storeId: store.id,
+            status: { in: ['SCHEDULED', 'SENT'] },
+            scheduledAt: { gte: monthStartUtc() },
+          },
+        })
+      : 0;
+
   return (
     <SettingsView
       shopDomain={store.shopDomain}
@@ -71,7 +88,14 @@ export default async function SettingsPage({
       gdprMode={store.gdprMode}
       campaign={
         campaign
-          ? { ...campaign, pendingCount, safetyThreshold: env.SEND_SAFETY_GATE_THRESHOLD }
+          ? {
+              ...campaign,
+              pendingCount,
+              safetyThreshold: env.SEND_SAFETY_GATE_THRESHOLD,
+              entitled,
+              usedThisMonth,
+              monthlyCap: Number.isFinite(cap) ? cap : null,
+            }
           : null
       }
     />

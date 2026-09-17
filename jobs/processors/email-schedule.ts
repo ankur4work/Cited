@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { enqueueReviewRequest } from '../enqueue';
+import { loadEntitlement, isPaid, reviewRequestsRemaining } from '@/lib/entitlements';
 import type { EmailJobData } from '../queue';
 
 /**
@@ -42,6 +43,28 @@ export async function emailScheduleProcessor(
   let queued = 0;
 
   for (const campaign of campaigns) {
+    // Plan gate. Checked here rather than at enable-time alone: a store can
+    // downgrade with its campaign already switched on, and the subscription
+    // webhook has no business reaching into campaign rows to switch it off.
+    // The sweep is the one place that sees every store on every pass.
+    const entitlement = await loadEntitlement(campaign.storeId);
+    if (!entitlement || !isPaid(entitlement)) {
+      logger.debug(
+        { storeId: campaign.storeId, plan: entitlement?.plan ?? 'unknown' },
+        'Review requests skipped — review requests are a paid capability',
+      );
+      continue;
+    }
+
+    const allowance = await reviewRequestsRemaining(entitlement);
+    if (allowance <= 0) {
+      logger.info(
+        { storeId: campaign.storeId, plan: entitlement.plan },
+        'Review requests held — monthly cap reached',
+      );
+      continue;
+    }
+
     const cutoff = new Date(Date.now() - campaign.delayHours * 60 * 60 * 1000);
 
     // `requestScheduledAt: null` is the whole guard. Imported historical
@@ -84,7 +107,24 @@ export async function emailScheduleProcessor(
       continue;
     }
 
-    for (const order of eligible) {
+    // Trim to what the plan still allows. Applied AFTER the safety gate on
+    // purpose: the gate must judge the true size of the backlog, not the capped
+    // slice of it, or a 3,000-order backlog on a 100-request allowance would
+    // slip under the threshold and start draining without anyone confirming.
+    const sendable = Number.isFinite(allowance) ? eligible.slice(0, allowance) : eligible;
+    if (sendable.length < eligible.length) {
+      logger.info(
+        {
+          storeId: campaign.storeId,
+          plan: entitlement.plan,
+          eligible: eligible.length,
+          sending: sendable.length,
+        },
+        'Review requests trimmed to the monthly cap',
+      );
+    }
+
+    for (const order of sendable) {
       // Never email an address that has opted out or hard-bounced.
       const suppressed = await prisma.suppression.findUnique({
         where: {

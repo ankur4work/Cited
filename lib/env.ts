@@ -73,6 +73,12 @@ const EnvObject = z.object({
   SEND_SAFETY_GATE_THRESHOLD: z.coerce.number().int().positive().default(250),
   EMAIL_RATE_PER_STORE_PER_HOUR: z.coerce.number().int().positive().default(500),
 
+  // Review requests a PRO store may send per calendar month. Free sends none
+  // and Scale is uncapped, so this number is the whole substance of the middle
+  // tier — raising it weakens the reason to move up, lowering it makes Pro feel
+  // punitive to exactly the merchants growing into it.
+  REVIEW_REQUEST_CAP_PRO: z.coerce.number().int().positive().default(500),
+
   // ── AI ─────────────────────────────────────────────────────
   // Optional: absent means the summary job logs and returns without writing
   // anything, so a deployment with no key is inert rather than broken.
@@ -247,6 +253,7 @@ const BUILD_STUB: Env = {
   COMPANY_ADDRESS: 'build stub',
   SEND_SAFETY_GATE_THRESHOLD: 250,
   EMAIL_RATE_PER_STORE_PER_HOUR: 500,
+  REVIEW_REQUEST_CAP_PRO: 500,
   AI_MODEL_BULK: 'gpt-5.4-mini',
   AI_MODEL_REASONING: 'gpt-5.4',
   AI_BUDGET_CENTS_PER_STORE: 500,

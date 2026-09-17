@@ -1,13 +1,27 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Entitlement } from './entitlements';
 
-vi.mock('./env', () => ({ env: { AI_BUDGET_CENTS_PER_STORE: 500 } }));
+vi.mock('./env', () => ({
+  env: { AI_BUDGET_CENTS_PER_STORE: 500, REVIEW_REQUEST_CAP_PRO: 500 },
+}));
 const findUnique = vi.fn();
-vi.mock('./prisma', () => ({ prisma: { store: { findUnique: () => findUnique() } } }));
+const sendCount = vi.fn();
+vi.mock('./prisma', () => ({
+  prisma: {
+    store: { findUnique: () => findUnique() },
+    requestSend: { count: (args: unknown) => sendCount(args) },
+  },
+}));
 
-const { isPaid, isScale, aiBudgetRemainingCents, checkAiEntitlement } = await import(
-  './entitlements'
-);
+const {
+  isPaid,
+  isScale,
+  aiBudgetRemainingCents,
+  checkAiEntitlement,
+  reviewRequestCapFor,
+  reviewRequestsRemaining,
+  monthStartUtc,
+} = await import('./entitlements');
 
 function store(overrides: Partial<Entitlement> = {}): Entitlement {
   return {
@@ -130,5 +144,54 @@ describe('aiBudgetRemainingCents', () => {
     // entitlement to budget for — the number is zero by construction.
     expect(aiBudgetRemainingCents(store({ plan: 'FREE' }))).toBe(0);
     expect(aiBudgetRemainingCents(store({ plan: 'FREE', aiCentsUsedMtd: 0 }))).toBe(0);
+  });
+});
+
+describe('review request entitlement', () => {
+  it('gives Free no allowance at all', () => {
+    expect(reviewRequestCapFor({ plan: 'FREE' })).toBe(0);
+  });
+
+  it('caps Pro and uncaps Scale', () => {
+    expect(reviewRequestCapFor({ plan: 'PRO' })).toBe(500);
+    expect(reviewRequestCapFor({ plan: 'SCALE' })).toBe(Infinity);
+  });
+
+  it('never queries usage for a plan whose answer cannot depend on it', async () => {
+    // A count against a store with hundreds of thousands of sends is not free,
+    // and for Free and Scale the result is fixed either way.
+    await expect(reviewRequestsRemaining({ storeId: 's', plan: 'FREE' })).resolves.toBe(0);
+    await expect(reviewRequestsRemaining({ storeId: 's', plan: 'SCALE' })).resolves.toBe(Infinity);
+    expect(sendCount).not.toHaveBeenCalled();
+  });
+
+  it('subtracts this month’s sends from the Pro cap', async () => {
+    sendCount.mockResolvedValueOnce(180);
+    await expect(reviewRequestsRemaining({ storeId: 's', plan: 'PRO' })).resolves.toBe(320);
+  });
+
+  it('floors at zero rather than returning a negative allowance', async () => {
+    // A cap lowered mid-month leaves a store already past it. Callers compare
+    // with <= 0, but a negative number would read as "owed sends" to anyone
+    // displaying it.
+    sendCount.mockResolvedValueOnce(900);
+    await expect(reviewRequestsRemaining({ storeId: 's', plan: 'PRO' })).resolves.toBe(0);
+  });
+
+  it('counts scheduled sends against the cap, not only delivered ones', async () => {
+    // One sweep queues hundreds of SCHEDULED rows before any becomes SENT.
+    // Counting only SENT would let a single pass authorise an unbounded batch.
+    sendCount.mockResolvedValueOnce(0);
+    await reviewRequestsRemaining({ storeId: 's', plan: 'PRO' });
+    expect(sendCount).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ status: { in: ['SCHEDULED', 'SENT'] } }),
+      }),
+    );
+  });
+
+  it('measures the window from the first instant of the UTC month', () => {
+    const d = monthStartUtc(new Date('2026-09-17T18:45:00Z'));
+    expect(d.toISOString()).toBe('2026-09-01T00:00:00.000Z');
   });
 });

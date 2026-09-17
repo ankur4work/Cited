@@ -11,11 +11,16 @@ import type { Plan } from '@prisma/client';
  * byte-identical behaviour, which meant a paying merchant was paying for a
  * label. This module is the missing half.
  *
- * Deliberately additive: nothing a Free store can do today moves behind this
- * gate. Free keeps unlimited reviews, photos, the server-rendered block and no
- * branding — that generosity is the whole wedge against Judge.me (PLAN.md §0).
- * Pro adds capabilities on top. Taking a feature away from free users to
- * manufacture a paid tier would cost more in switchers than it earns.
+ * Free keeps unlimited reviews, photos, the server-rendered block and no
+ * branding — that generosity is the wedge against Judge.me (PLAN.md §0). Pro
+ * adds capabilities on top.
+ *
+ * One exception, decided 2026-09-17: review request emails are paid-only, with
+ * a monthly cap on Pro and no cap on Scale. This is the one capability that has
+ * been moved OUT of the free tier, against the "purely additive" rule the rest
+ * of this module follows, and it is a deliberate product call rather than an
+ * oversight — collection is the engine of a reviews app, so a free store can
+ * display and collect reviews but cannot solicit them by email.
  */
 
 /** What a gated code path needs to know about a store, in one read. */
@@ -79,6 +84,54 @@ export function aiBudgetRemainingCents(entitlement: Entitlement): number {
   if (!isPaid(entitlement)) return 0;
   if (isScale(entitlement)) return Infinity;
   return Math.max(0, env.AI_BUDGET_CENTS_PER_STORE - entitlement.aiCentsUsedMtd);
+}
+
+/**
+ * Review request emails a store may send per calendar month.
+ *
+ * Free is zero: requests are a paid capability. Pro buys a bounded allowance,
+ * Scale removes the bound — `Infinity` for the same reason as the AI budget
+ * above, so the uncapped tier cannot quietly acquire a ceiling.
+ */
+export function reviewRequestCapFor(entitlement: Pick<Entitlement, 'plan'>): number {
+  if (!isPaid(entitlement)) return 0;
+  if (isScale(entitlement)) return Infinity;
+  return env.REVIEW_REQUEST_CAP_PRO;
+}
+
+/** First instant of the current UTC month — the window a cap is measured over. */
+export function monthStartUtc(now: Date = new Date()): Date {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+}
+
+/**
+ * How many more requests this store may send before its monthly cap bites.
+ *
+ * Counts SCHEDULED alongside SENT deliberately. A sweep queues hundreds of rows
+ * in one pass and the worker flips them to SENT later; counting only SENT would
+ * let a single pass authorise an unbounded batch against a cap that had not yet
+ * caught up — the allowance is consumed at the moment a send is committed to,
+ * not at the moment it lands.
+ *
+ * SUPPRESSED, BOUNCED and FAILED rows do not count. A merchant should not lose
+ * allowance to an address that was never going to receive anything.
+ */
+export async function reviewRequestsRemaining(
+  entitlement: Pick<Entitlement, 'storeId' | 'plan'>,
+  now: Date = new Date(),
+): Promise<number> {
+  const cap = reviewRequestCapFor(entitlement);
+  if (cap === 0 || cap === Infinity) return cap;
+
+  const used = await prisma.requestSend.count({
+    where: {
+      storeId: entitlement.storeId,
+      status: { in: ['SCHEDULED', 'SENT'] },
+      scheduledAt: { gte: monthStartUtc(now) },
+    },
+  });
+
+  return Math.max(0, cap - used);
 }
 
 /** Why a gated capability was withheld. Logged, never shown to a shopper. */
