@@ -17,6 +17,33 @@ import { logger } from '@/lib/logger';
  */
 
 /**
+ * Build a BullMQ-safe job id.
+ *
+ * BullMQ rejects a custom id containing a colon UNLESS it splits into exactly
+ * three parts — a compatibility carve-out for old repeatable jobs, not a rule
+ * anyone would guess:
+ *
+ *   if (jobId.includes(':') && jobId.split(':').length !== 3) throw
+ *
+ * So `syndicate:review:abc` was accepted while `compliance:abc` (two parts) and
+ * `email:camp:order:0` (four) both threw at enqueue time. Every call site wraps
+ * enqueue in a try/catch that logs and continues, so the failures were silent:
+ * review-request emails never reached the queue, GDPR compliance jobs never
+ * ran, and debounced webhook ingestion threw on every call because the job NAME
+ * ('ingest:products') contributed a colon of its own.
+ *
+ * Joining with a dash sidesteps the rule entirely rather than tiptoeing around
+ * a part count. Colons inside an interpolated value — a Shopify GID is
+ * `gid://shopify/Order/123` — are stripped for the same reason.
+ */
+export function jobKey(...parts: Array<string | number>): string {
+  return parts
+    .map((p) => String(p).replace(/:/g, '-'))
+    .join('-')
+    .replace(/-{2,}/g, '-');
+}
+
+/**
  * Install backfill: pull the catalog, then recent orders.
  *
  * Job IDs are keyed on the store so a reinstall or a duplicated callback
@@ -44,22 +71,17 @@ export async function enqueueInstallBackfill(input: {
       ? input.installKey.getTime()
       : (input.installKey ?? 'initial');
 
-  // The install key joins with a DASH, not a colon. BullMQ rejects a custom
-  // job id containing colons unless it splits into exactly three parts
-  // ("Custom Id cannot contain :"), so a fourth segment throws at enqueue time
-  // — which, inside the try/catch at the call sites, would have been logged
-  // and swallowed, leaving installs with no backfill and no visible error.
   await ingestionQueue.add(
     'ingest:products',
     { storeId, shopDomain, origin: 'install', force: true },
-    { jobId: `install:products:${storeId}-${key}` },
+    { jobId: jobKey('install-products', storeId, key) },
   );
 
   await ingestionQueue.add(
     'ingest:orders',
     { storeId, shopDomain, origin: 'install', sinceDays: 90 },
     {
-      jobId: `install:orders:${storeId}-${key}`,
+      jobId: jobKey('install-orders', storeId, key),
       // Products first: order→product matching needs the catalog present, and
       // verified-buyer status depends on that match.
       //
@@ -98,7 +120,7 @@ async function enqueueDebouncedIngestion(
   name: IngestionJobName,
   input: { storeId: string; shopDomain: string; delayMs?: number },
 ): Promise<void> {
-  const jobId = `webhook:${name}:${input.storeId}`;
+  const jobId = jobKey('webhook', name, input.storeId);
 
   const existing = await ingestionQueue.getJob(jobId);
   if (existing) {
@@ -196,8 +218,8 @@ export async function enqueueReviewSyndication(input: {
   repairKey?: string;
 }): Promise<void> {
   const jobId = input.repairKey
-    ? `syndicate:review:${input.reviewId}:repair:${input.repairKey}`
-    : `syndicate:review:${input.reviewId}`;
+    ? jobKey('syndicate-review', input.reviewId, 'repair', input.repairKey)
+    : jobKey('syndicate-review', input.reviewId);
 
   await addCoalescedSyndication('syndicate:review', {
     storeId: input.storeId,
@@ -221,7 +243,7 @@ export async function enqueueAggregateSync(input: {
     storeId: input.storeId,
     productId: input.productId,
   }, {
-    jobId: `syndicate:aggregate:${input.productId}`,
+    jobId: jobKey('syndicate-aggregate', input.productId),
     delay: input.debounceMs ?? 10_000,
   });
 }
@@ -245,7 +267,7 @@ export async function enqueueSyndicationBackfill(input: {
     'syndicate:backfill',
     { storeId: input.storeId, cursor: input.cursor, processed: input.processed },
     {
-      jobId: `syndicate:backfill:${input.storeId}:${input.cursor ?? 'start'}`,
+      jobId: jobKey('syndicate-backfill', input.storeId, input.cursor ?? 'start'),
       delay: input.delayMs ?? 0,
     },
   );
@@ -281,7 +303,7 @@ export async function enqueueMetaobjectReconcile(input: {
       webhookTopic: input.topic,
       webhookEventId: input.webhookEventId,
     },
-    { jobId: `reconcile:metaobject:${input.webhookId}` },
+    { jobId: jobKey('reconcile-metaobject', input.webhookId) },
   );
 }
 
@@ -311,7 +333,7 @@ export async function enqueueReviewRequest(input: {
       orderShopifyGid: input.orderShopifyGid,
     },
     {
-      jobId: `email:${input.campaignId}:${orderKey}:${reminder}`,
+      jobId: jobKey('email', input.campaignId, orderKey, reminder),
       delay: input.delayMs ?? 0,
     },
   );
@@ -348,7 +370,7 @@ export async function enqueueCompliancePurge(input: {
       customerEmail: input.customerEmail,
       orderGids: input.orderGids,
     },
-    { jobId: `compliance:${input.complianceRequestId}` },
+    { jobId: jobKey('compliance', input.complianceRequestId) },
   );
 
   logger.info(
@@ -372,7 +394,7 @@ export async function enqueueMediaBackfill(input: {
   await maintenanceQueue.add(
     'media:backfill',
     { storeId: input.storeId, reviewId: input.reviewId },
-    { jobId: `media:backfill:${input.reviewId}`, delay: 20_000 },
+    { jobId: jobKey('media-backfill', input.reviewId), delay: 20_000 },
   );
 }
 
@@ -390,7 +412,7 @@ export async function enqueueReviewTranslation(input: {
   await aiQueue.add(
     'ai:translate-review',
     { storeId: input.storeId, reviewId: input.reviewId },
-    { jobId: `ai:translate:${input.reviewId}` },
+    { jobId: jobKey('ai-translate', input.reviewId) },
   );
 }
 
@@ -402,6 +424,6 @@ export async function enqueueProductSummary(input: {
   await aiQueue.add(
     'ai:summarize-product',
     { storeId: input.storeId, productId: input.productId },
-    { jobId: `ai:summary:${input.productId}`, delay: 30_000 },
+    { jobId: jobKey('ai-summary', input.productId), delay: 30_000 },
   );
 }
