@@ -164,18 +164,25 @@ api_version = "2025-07"
 [product.metafields.app.summary]
 type = "json"
 name = "Cited review summary"
+# Read by the theme app extension on the storefront, for signed-out visitors
+# and crawlers alike. Stated explicitly rather than relied on as a default:
+# without storefront read the field renders blank for everyone, which looks
+# identical to having no summary at all.
+access.storefront = "public_read"
 
 # 1–5 star histogram, e.g. {"1":2,"2":0,"3":1,"4":8,"5":29}. Drives the rating
 # breakdown a shopper opens from the summary line.
 [product.metafields.app.breakdown]
 type = "json"
 name = "Cited rating breakdown"
+access.storefront = "public_read"
 
 # Shop-level feature flags. Liquid cannot ask what plan a store is on, so
 # anything gated by plan has to arrive as data Shopify already holds.
 [shop.metafields.app.features]
 type = "json"
 name = "Cited feature flags"
+access.storefront = "public_read"
 
 [pos]
 embedded = false
