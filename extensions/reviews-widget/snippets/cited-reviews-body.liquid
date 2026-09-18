@@ -146,16 +146,23 @@
     <h2 class="cited-reviews__heading">{{ heading | escape }}</h2>
   {%- endif -%}
 
-  {%- comment -%} ── Aggregate summary ── {%- endcomment -%}
-  {%- if has_reviews -%}
-    {%- comment -%}
-      A disclosure, not a panel that is always open — and `details`/`summary`
-      rather than a popover driven by script. The block's whole premise is that
-      it renders inside Shopify's own HTML response with no JavaScript, so a
-      breakdown that needs JS to open would be invisible to exactly the crawlers
-      this app exists to feed. The browser gives keyboard support, focus
-      handling and Escape for free.
-    {%- endcomment -%}
+  {%- comment -%}
+    ── Compact summary, for the product title ──
+
+    EMBED PATH ONLY. This exists to be lifted out of the section and dropped
+    under the product title; the section below has its own full score and
+    histogram. On the app-block path nothing moves it, so rendering it here
+    would put two rating displays side by side in the same section — which is
+    exactly what it did.
+
+    A disclosure, not a panel that is always open — and `details`/`summary`
+    rather than a popover driven by script. The block's whole premise is that
+    it renders inside Shopify's own HTML response with no JavaScript, so a
+    breakdown that needs JS to open would be invisible to exactly the crawlers
+    this app exists to feed. The browser gives keyboard support, focus
+    handling and Escape for free.
+  {%- endcomment -%}
+  {%- if has_reviews and is_embed -%}
     <details class="cited-rating" data-cited-summary style="{{ cited_vars }}">
       <summary class="cited-rating__trigger">
         <span class="cited-rating__value">{{ rating_avg | round: 1 }}</span>

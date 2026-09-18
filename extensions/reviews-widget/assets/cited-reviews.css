@@ -26,6 +26,12 @@
   color: var(--cited-text);
   display: block;
   margin-block: calc(var(--cited-gap) * 1.25);
+  /*
+   * "See all reviews" is an in-page anchor, and most themes have a sticky
+   * header. Without this the browser scrolls the section to y=0, the header
+   * sits on top of it, and the jump reads as having done nothing at all.
+   */
+  scroll-margin-top: 6rem;
   /* Long review bodies in narrow columns break badly without this. */
   overflow-wrap: break-word;
 }
@@ -58,12 +64,24 @@
 .cited-rating { position: relative; display: inline-block; }
 
 /*
- * Set only when the placement script has lifted this out of the block and
- * dropped it under the product title. It is then sitting in the theme's own
- * markup, between a heading and whatever the theme puts next, so it needs
- * breathing room the in-block copy gets from the section's layout.
+ * Hidden until the placement script has actually moved it under the product
+ * title. It is rendered inside the section purely as a staging point, and the
+ * section already shows a full score and histogram of its own — so if the move
+ * never happens (script blocked, no title found), showing it would mean two
+ * rating displays stacked in the same place.
+ *
+ * Nothing is lost when it stays hidden: the section's own score and histogram
+ * are in the server's HTML either way, which is what crawlers and a
+ * scripting-off visitor read.
  */
-.cited-rating--placed { margin: 6px 0 10px; }
+[data-cited-summary] { display: none; }
+
+/*
+ * Set by the placement script once this is sitting in the theme's own markup,
+ * between the title and whatever the theme puts next — so it needs breathing
+ * room the section's layout would otherwise have given it.
+ */
+.cited-rating--placed { display: inline-block; margin: 6px 0 10px; }
 
 .cited-rating__trigger {
   display: inline-flex;
