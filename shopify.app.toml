@@ -132,6 +132,45 @@ api_version = "2025-07"
   ]
   uri = "/api/webhooks/privacy"
 
+# ── App-owned metafields ──────────────────────────────────────────────
+#
+# These MUST be declared. `metafieldsSet` rejects a write to an app-reserved
+# namespace that has no definition —
+#
+#   "Value requires that you have a metafield definition with the key: reviews"
+#
+# — and the syndication job logs that as a permanent failure and moves on, so
+# the storefront block rendered an aggregate with a permanently empty review
+# list and nothing surfaced as broken.
+#
+# Declared in TOML rather than created at runtime with metafieldDefinitionCreate:
+# these are fixed types, so they belong in version control and install with the
+# app rather than depending on a migration having run.
+#
+# `$app` with no suffix, matching the writes in lib/shopify/metaobjects.ts and
+# the `product.metafields.app.*` reads in the theme extension. A named
+# namespace (`$app:cited`) is a DIFFERENT namespace and reads as
+# `metafields.app--cited` in Liquid.
+
+# NOTE: the product-to-reviews link (`app.reviews`) is NOT declared here.
+# It is a `list.metaobject_reference` pointing at `product_review`, which is a
+# Shopify STANDARD definition — and TOML validations only accept a metaobject
+# definition declared by this app ("Validations must be a valid metaobject
+# definition declared by your app"). The standard definition's id is also
+# per-shop, which a static file cannot carry. So that one definition is created
+# at runtime instead, in lib/shopify/metafield-definitions.ts.
+
+# AI review summary — written for paid stores only, absent everywhere else.
+[product.metafields.app.summary]
+type = "json"
+name = "Cited review summary"
+
+# Shop-level feature flags. Liquid cannot ask what plan a store is on, so
+# anything gated by plan has to arrive as data Shopify already holds.
+[shop.metafields.app.features]
+type = "json"
+name = "Cited feature flags"
+
 [pos]
 embedded = false
 

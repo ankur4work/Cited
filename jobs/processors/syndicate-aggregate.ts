@@ -8,6 +8,7 @@ import {
   MetaobjectError,
   REVIEW_LIST_LIMIT,
 } from '@/lib/shopify/metaobjects';
+import { ensureReviewListDefinition } from '@/lib/shopify/metafield-definitions';
 import { recomputeProductAggregate } from '@/lib/reviews/aggregate';
 import { enqueueProductSummary } from '../enqueue';
 import type { SyndicationJobData, SyndicationJobName } from '../queue';
@@ -79,6 +80,12 @@ export async function syndicateAggregateProcessor(
 
   const client = new ShopifyClient(store);
 
+  // The review list needs a metafield definition to exist before anything can
+  // be written into it, and that one definition cannot ship in the TOML (see
+  // ensureReviewListDefinition). Once per job rather than per product: it is
+  // two API calls, and a backfill chunk covers many products.
+  await ensureReviewListDefinition(client);
+
   for (const product of products) {
     try {
       await setProductRatingMetafields(client, {
@@ -117,7 +124,10 @@ export async function syndicateAggregateProcessor(
       if (err instanceof MetaobjectError && err.terminal) {
         logger.error(
           { storeId, productId: product.id, err: err.message },
-          'Rating metafield write failed permanently',
+          // Deliberately not "Rating metafield ...": this block covers the
+          // rating write AND the review list write, and naming only the first
+          // sent an investigation after a rating that had actually succeeded.
+          'Metafield write failed permanently',
         );
         continue;
       }
