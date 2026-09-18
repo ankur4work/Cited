@@ -49,60 +49,115 @@
   margin: 0 0 calc(var(--cited-gap) * 0.5);
 }
 
-/*
- * The aggregate is the first thing a shopper reads and the thing they act on,
- * so it gets a surface of its own rather than sitting flush against the list.
- * Baseline-aligned, not centre-aligned: a 2.75rem number next to 14px text
- * centres into a visible wobble.
+/* ── Rating summary, as a disclosure ───────────────────────────────
+ *
+ * One quiet line that opens a breakdown, rather than a card that occupies the
+ * buy column permanently. The summary line is what a shopper glances at; the
+ * histogram is what they consult only when the average alone is not enough.
  */
-.cited-reviews__summary {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: calc(var(--cited-gap) * 0.625) calc(var(--cited-gap) * 0.75);
-  border: 1px solid var(--cited-hairline);
-  border-radius: var(--cited-radius);
-  background: var(--cited-surface);
-}
+.cited-rating { position: relative; display: inline-block; }
 
-/*
- * One line, not a panel. This previously stacked a 3rem numeral above a star
- * row above the count, in a card with 1.25× padding — roughly 120px of height
- * to carry "5.0, five stars, 2 reviews". On a product page the block sits in
- * the buy column, where that much furniture pushes the price and the add-to-
- * cart button below the fold. Everything now reads across a single baseline.
- */
-.cited-reviews__score {
-  display: flex;
-  align-items: baseline;
-  gap: 5px;
-  line-height: 1;
-}
-
-.cited-reviews__summary-meta {
-  display: flex;
+.cited-rating__trigger {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 4px;
+  margin-left: -4px;
+  border-radius: 4px;
+  cursor: pointer;
+  list-style: none;
+  line-height: 1;
 }
 
-.cited-reviews__score-value {
-  font-size: 1.25rem;
+/* Safari renders a disclosure triangle from a pseudo-element, not list-style. */
+.cited-rating__trigger::-webkit-details-marker { display: none; }
+
+.cited-rating__trigger:hover { background: var(--cited-hairline); }
+.cited-rating__trigger:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
+
+.cited-rating__value {
+  font-size: 0.9375rem;
   font-weight: 700;
-  line-height: 1;
-  letter-spacing: -0.02em;
-  /* 4.6 and 5.0 must occupy the same width or the block shifts on update. */
+  /* 4.6 and 5.0 must occupy the same width or the line shifts on update. */
   font-variant-numeric: tabular-nums;
 }
 
-.cited-reviews__score-scale {
-  font-size: 0.75rem;
+.cited-rating__caret { color: var(--cited-muted); flex: none; }
+.cited-rating[open] .cited-rating__caret { transform: rotate(180deg); }
+
+.cited-rating__count {
+  font-size: 0.8125rem;
   color: var(--cited-muted);
-  white-space: nowrap;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
-.cited-reviews__count { margin: 0; font-size: 0.875rem; color: var(--cited-muted); }
+/*
+ * Floated over the page rather than pushing it. Opening a breakdown must not
+ * reflow the price and the add-to-cart button underneath it — a layout shift
+ * under the shopper's cursor at the moment they are deciding is worse than no
+ * breakdown at all.
+ */
+.cited-rating__panel {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  left: 0;
+  width: max-content;
+  max-width: min(22rem, 90vw);
+  padding: 14px 16px;
+  border: 1px solid var(--cited-hairline);
+  border-radius: calc(var(--cited-radius) * 1.25);
+  /* Opaque, not var(--cited-surface): that is a translucent tint, and the page
+   * behind it would read straight through the panel. */
+  background: Canvas;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14);
+}
+
+.cited-rating__headline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.9375rem;
+}
+
+.cited-rating__total {
+  margin: 4px 0 12px;
+  font-size: 0.8125rem;
+  color: var(--cited-muted);
+}
+
+.cited-rating__bars { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+
+.cited-rating__row {
+  display: grid;
+  grid-template-columns: 3.25rem 1fr 2.5rem;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.8125rem;
+}
+
+.cited-rating__row-label { color: var(--cited-muted); white-space: nowrap; }
+
+.cited-rating__track {
+  height: 14px;
+  border: 1px solid var(--cited-hairline);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.cited-rating__fill {
+  display: block;
+  height: 100%;
+  background: var(--cited-star);
+}
+
+.cited-rating__row-pct {
+  text-align: right;
+  color: var(--cited-muted);
+  font-variant-numeric: tabular-nums;
+}
 
 .cited-reviews__empty {
   padding: calc(var(--cited-gap) * 1.5);
@@ -130,25 +185,35 @@
 /* No trailing rule above the form — it would read as a broken table edge. */
 .cited-review:last-child { border-bottom: 0; }
 
-.cited-review__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+/* Who wrote it, on its own line above the verdict. */
+.cited-review__who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+/*
+ * Stars and title on ONE line, title not wrapped to its own row.
+ * "★★★★★ Good for casual wear" is a single sentence a shopper reads in one
+ * movement; breaking the title underneath turns one glance into two.
+ */
+.cited-review__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 .cited-review__title {
-  font-size: 1rem;
-  font-weight: 600;
-  line-height: 1.35;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  line-height: 1.3;
   margin: 0;
-  /* Full width on its own line: a title beside stars gets squeezed to two
-   * words on a phone. */
-  flex-basis: 100%;
-  order: 2;
+  color: var(--cited-text);
 }
 
 .cited-review__meta {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
-  margin-top: 10px;
+  margin-top: 4px;
   font-size: 0.8125rem;
   color: var(--cited-muted);
 }
@@ -158,8 +223,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   background: var(--cited-surface);
   border: 1px solid var(--cited-hairline);
@@ -483,11 +548,23 @@
  * falls back to the viewport where it is not.
  */
 @media (max-width: 540px) {
-  .cited-reviews__summary {
-    gap: var(--cited-gap);
-    padding: var(--cited-gap);
+  /*
+   * Floating the panel is a desktop affordance. In a narrow column an absolute
+   * panel either hangs off the right edge or gets clipped by an ancestor's
+   * overflow, so here it becomes an ordinary block that opens in the flow.
+   * That does push the content below it — acceptable on a phone, where the
+   * shopper has deliberately tapped to expand, and far better than a breakdown
+   * they cannot see.
+   */
+  .cited-rating { display: block; }
+  .cited-rating__panel {
+    position: static;
+    width: auto;
+    max-width: none;
+    margin-top: 8px;
+    box-shadow: none;
   }
-  .cited-reviews__score-value { font-size: 2.5rem; }
+  .cited-rating__row { grid-template-columns: 3rem 1fr 2.25rem; }
   .cited-reviews__form-wrap { padding: var(--cited-gap); }
   .cited-review__media-item { width: 72px; height: 72px; }
   .cited-review__media-item--video { width: 128px; height: 72px; }

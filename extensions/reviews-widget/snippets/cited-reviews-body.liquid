@@ -59,6 +59,11 @@
   # job for PRO stores only; absent everywhere else, which is why the render
   # below is guarded rather than conditional on any plan flag reaching Liquid.
   assign review_summary = product.metafields.app.summary.value
+  # The 1–5 histogram behind the breakdown panel, written by the aggregate job
+  # from counts it already had. Absent on a store that has not resynced since
+  # the field existed, which is why the panel below is guarded rather than
+  # assumed.
+  assign rating_breakdown = product.metafields.app.breakdown.value
 
   # Shop-level feature flags, written by the app when the plan changes. Liquid
   # has no way to ask what plan a store is on — there is no request to our
@@ -126,23 +131,67 @@
 
   {%- comment -%} ── Aggregate summary ── {%- endcomment -%}
   {%- if has_reviews -%}
-    <div class="cited-reviews__summary">
-      <div class="cited-reviews__score">
-        <span class="cited-reviews__score-value">{{ rating_avg | round: 1 }}</span>
-        <span class="cited-reviews__score-scale">out of {{ scale_max }}</span>
-      </div>
+    {%- comment -%}
+      A disclosure, not a panel that is always open — and `details`/`summary`
+      rather than a popover driven by script. The block's whole premise is that
+      it renders inside Shopify's own HTML response with no JavaScript, so a
+      breakdown that needs JS to open would be invisible to exactly the crawlers
+      this app exists to feed. The browser gives keyboard support, focus
+      handling and Escape for free.
+    {%- endcomment -%}
+    <details class="cited-rating">
+      <summary class="cited-rating__trigger">
+        <span class="cited-rating__value">{{ rating_avg | round: 1 }}</span>
+        {%- render 'cited-stars', rating: rating_avg, scale_max: scale_max, size: 15 -%}
+        <svg class="cited-rating__caret" viewBox="0 0 10 6" width="10" height="6" aria-hidden="true" focusable="false">
+          <path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="cited-rating__count">
+          {%- if rating_count == 1 -%}1 review{%- else -%}{{ rating_count }} reviews{%- endif -%}
+        </span>
+      </summary>
 
-      <div class="cited-reviews__summary-meta">
-        {%- render 'cited-stars', rating: rating_avg, scale_max: scale_max, size: 16 -%}
-        <p class="cited-reviews__count">
-          {%- if rating_count == 1 -%}
-            Based on 1 review
-          {%- else -%}
-            Based on {{ rating_count }} reviews
-          {%- endif -%}
+      <div class="cited-rating__panel">
+        <p class="cited-rating__headline">
+          {%- render 'cited-stars', rating: rating_avg, scale_max: scale_max, size: 16 -%}
+          <strong>{{ rating_avg | round: 1 }} out of {{ scale_max }}</strong>
         </p>
+        <p class="cited-rating__total">
+          {{ rating_count }} global rating{% unless rating_count == 1 %}s{% endunless %}
+        </p>
+
+        {%- if rating_breakdown != blank -%}
+          <ul class="cited-rating__bars" role="list">
+            {%- comment -%}
+              Descending, 5 first, because that is the order every shopper has
+              been trained to read a ratings histogram in.
+
+              Integer arithmetic throughout: `times: 100` BEFORE `divided_by`
+              keeps this exact without ever producing a float, which matters
+              because a float reaching a range bound elsewhere in this block
+              raised "invalid integer" and silently rendered nothing.
+            {%- endcomment -%}
+            {%- for i in (1..scale_max) reversed -%}
+              {%- liquid
+                assign bucket = i | append: ''
+                assign bucket_count = rating_breakdown[bucket] | default: 0 | floor
+                assign pct = 0
+                if rating_count > 0
+                  assign pct = bucket_count | times: 100 | divided_by: rating_count
+                endif
+              -%}
+              <li class="cited-rating__row">
+                <span class="cited-rating__row-label">{{ i }} star</span>
+                <span class="cited-rating__track">
+                  <span class="cited-rating__fill" style="width: {{ pct }}%;"></span>
+                </span>
+                <span class="cited-rating__row-pct">{{ pct }}%</span>
+              </li>
+            {%- endfor -%}
+          </ul>
+        {%- endif -%}
       </div>
-    </div>
+    </details>
   {%- else -%}
     <div class="cited-reviews__empty">
       <p>{{ empty_text | escape }}</p>
@@ -182,14 +231,14 @@
           endif
         -%}
         <li class="cited-review">
-          <div class="cited-review__head">
-            {%- render 'cited-stars', rating: r_rating, scale_max: scale_max, size: 15 -%}
-            {%- if review.title != blank -%}
-              <h3 class="cited-review__title">{{ review.title | escape }}</h3>
-            {%- endif -%}
-          </div>
-
-          <div class="cited-review__meta">
+          {%- comment -%}
+            Reading order is person → verdict → provenance → detail, which is
+            how a shopper actually interrogates a review: who said this, what
+            did they conclude, can I trust it, and only then the argument.
+            Stars used to lead and the reviewer's name sat underneath, which
+            reads as a rating that happens to have a person attached.
+          {%- endcomment -%}
+          <div class="cited-review__who">
             {%- comment -%}
               An initial rather than an avatar image: there is no photo to
               show, and a generated identicon would be decoration that costs a
@@ -197,6 +246,21 @@
             {%- endcomment -%}
             <span class="cited-review__avatar" aria-hidden="true">{{ r_author | slice: 0 | upcase }}</span>
             <span class="cited-review__author">{{ r_author | escape }}</span>
+          </div>
+
+          <div class="cited-review__head">
+            {%- render 'cited-stars', rating: r_rating, scale_max: scale_max, size: 14 -%}
+            {%- if review.title != blank -%}
+              <h3 class="cited-review__title">{{ review.title | escape }}</h3>
+            {%- endif -%}
+          </div>
+
+          <div class="cited-review__meta">
+            {%- if review.submitted_at != blank -%}
+              <time class="cited-review__date" datetime="{{ review.submitted_at | date: '%Y-%m-%d' }}">
+                Reviewed on {{ review.submitted_at | date: format: 'date' }}
+              </time>
+            {%- endif -%}
             {%- comment -%}
               This is OUR order-match badge. It is deliberately NOT, and must
               never resemble, the "Verified by Shop" badge.
@@ -228,11 +292,6 @@
                 </svg>
                 Verified purchase
               </span>
-            {%- endif -%}
-            {%- if review.submitted_at != blank -%}
-              <time class="cited-review__date" datetime="{{ review.submitted_at | date: '%Y-%m-%d' }}">
-                {{ review.submitted_at | date: format: 'abbreviated_date' }}
-              </time>
             {%- endif -%}
           </div>
 

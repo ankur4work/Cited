@@ -371,6 +371,60 @@ export async function setProductSummaryMetafield(
   }
 }
 
+/**
+ * Publish the 1–5 star histogram the storefront breakdown renders.
+ *
+ * Already computed — `recomputeProductAggregate` groups by rating and stores
+ * the counts on `Product.ratingBreakdown` — but it never left our database, so
+ * the block could say "4.5 out of 5 from 40 reviews" and not how those 40 split.
+ * That split is what a shopper actually interrogates: 4.5 from mostly 5s reads
+ * very differently from 4.5 with a tail of 1s.
+ *
+ * Shopify's `reviews` namespace has no field for it, so it travels as an
+ * app-owned json metafield like the summary does.
+ */
+export async function setProductRatingBreakdown(
+  client: ShopifyClient,
+  input: { productGid: string; breakdown: Record<string, number> },
+): Promise<void> {
+  const resp = await client.graphql<{
+    metafieldsSet: {
+      userErrors: Array<{ field: string[] | null; message: string; code?: string }>;
+    } | null;
+  }>(SUMMARY_SET, {
+    metafields: [
+      {
+        ownerId: input.productGid,
+        namespace: '$app',
+        key: 'breakdown',
+        type: 'json',
+        value: JSON.stringify(input.breakdown),
+      },
+    ],
+  });
+
+  if (!resp.data?.metafieldsSet) {
+    const message =
+      resp.errors?.map((e) => e.message).join('; ') ?? 'metafieldsSet returned no data';
+    const denied = /access denied|required access/i.test(message);
+    throw new MetaobjectError(
+      `breakdown: ${message}`,
+      denied ? 'ACCESS_DENIED' : undefined,
+      denied,
+    );
+  }
+
+  const errors = resp.data.metafieldsSet.userErrors ?? [];
+  if (errors.length > 0) {
+    const first = errors[0]!;
+    throw new MetaobjectError(
+      `breakdown: ${errors.map((e) => e.message).join('; ')}`,
+      first.code,
+      isTerminalCode(first.code, first.message),
+    );
+  }
+}
+
 export async function upsertReviewMetaobject(
   client: ShopifyClient,
   input: ReviewMetaobjectInput,

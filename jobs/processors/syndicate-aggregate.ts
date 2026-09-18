@@ -4,6 +4,7 @@ import { logger } from '@/lib/logger';
 import { ShopifyClient } from '@/lib/shopify/client';
 import {
   setProductRatingMetafields,
+  setProductRatingBreakdown,
   setProductReviewList,
   MetaobjectError,
   REVIEW_LIST_LIMIT,
@@ -92,6 +93,11 @@ export async function syndicateAggregateProcessor(
         productGid: product.shopifyGid,
         ratingAvg: result.ratingAvg,
         ratingCount: result.ratingCount,
+      });
+
+      await setProductRatingBreakdown(client, {
+        productGid: product.shopifyGid,
+        breakdown: result.ratingBreakdown,
       });
 
       // The rating tells a shopper how many people liked this. The list is
