@@ -180,6 +180,66 @@
 
 .cited-rating__more:hover { text-decoration: underline; }
 
+/* ── Reviews section layout ────────────────────────────────────────
+ *
+ * Verdict on the left, evidence on the right. The left column is what a
+ * shopper checks before deciding whether to read any further — score,
+ * distribution, and the invitation to add their own.
+ *
+ * `start`, not `stretch`: the aside is short and the list can be very long, and
+ * a stretched aside would draw a column of empty background down the page.
+ */
+.cited-reviews__layout {
+  display: grid;
+  grid-template-columns: minmax(14rem, 18rem) 1fr;
+  gap: calc(var(--cited-gap) * 1.5);
+  align-items: start;
+  margin-top: var(--cited-gap);
+}
+
+.cited-reviews__aside { display: grid; gap: 6px; }
+
+.cited-reviews__score {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 1rem;
+}
+
+.cited-reviews__total {
+  margin: 0 0 8px;
+  font-size: 0.8125rem;
+  color: var(--cited-muted);
+}
+
+.cited-reviews__cta {
+  margin-top: calc(var(--cited-gap) * 0.75);
+  padding-top: calc(var(--cited-gap) * 0.75);
+  border-top: 1px solid var(--cited-hairline);
+}
+
+.cited-reviews__cta-title { margin: 0; font-weight: 600; font-size: 0.9375rem; }
+
+.cited-reviews__cta-sub {
+  margin: 2px 0 10px;
+  font-size: 0.8125rem;
+  color: var(--cited-muted);
+}
+
+.cited-reviews__cta-button { display: inline-block; text-decoration: none; }
+
+.cited-reviews__main { min-width: 0; }
+
+/*
+ * One column once the two would be too narrow to read. The aside is a summary,
+ * so it stays first — a shopper scrolling to reviews wants the score before
+ * the list, not after it.
+ */
+@media (max-width: 760px) {
+  .cited-reviews__layout { grid-template-columns: 1fr; }
+}
+
 .cited-reviews__empty {
   padding: calc(var(--cited-gap) * 1.5);
   color: var(--cited-muted);
@@ -371,11 +431,44 @@
   max-width: 30rem;
 }
 
+/*
+ * The form is a disclosure now, so its heading is the control that opens it.
+ * Styled as a button because that is what it behaves like — a heading that
+ * silently does something when clicked is worse than either.
+ */
 .cited-reviews__form-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 0.9375rem;
   font-weight: 600;
   letter-spacing: -0.01em;
-  margin: 0 0 calc(var(--cited-gap) * 0.5);
+  margin: 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.cited-reviews__form-heading::-webkit-details-marker { display: none; }
+
+/* A caret drawn in CSS: the summary is Liquid-escaped merchant copy, so no
+ * markup can be added inside it from the template. */
+.cited-reviews__form-heading::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  margin-top: -3px;
+}
+
+.cited-reviews__form-wrap[open] .cited-reviews__form-heading::after {
+  transform: rotate(-135deg);
+  margin-top: 2px;
+}
+
+.cited-reviews__form-wrap[open] .cited-reviews__form-heading {
+  margin-bottom: calc(var(--cited-gap) * 0.5);
 }
 
 

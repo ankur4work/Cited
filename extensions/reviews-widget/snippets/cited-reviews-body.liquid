@@ -177,36 +177,7 @@
           {{ rating_count }} global rating{% unless rating_count == 1 %}s{% endunless %}
         </p>
 
-        {%- if rating_breakdown != blank -%}
-          <ul class="cited-rating__bars" role="list">
-            {%- comment -%}
-              Descending, 5 first, because that is the order every shopper has
-              been trained to read a ratings histogram in.
-
-              Integer arithmetic throughout: `times: 100` BEFORE `divided_by`
-              keeps this exact without ever producing a float, which matters
-              because a float reaching a range bound elsewhere in this block
-              raised "invalid integer" and silently rendered nothing.
-            {%- endcomment -%}
-            {%- for i in (1..scale_max) reversed -%}
-              {%- liquid
-                assign bucket = i | append: ''
-                assign bucket_count = rating_breakdown[bucket] | default: 0 | floor
-                assign pct = 0
-                if rating_count > 0
-                  assign pct = bucket_count | times: 100 | divided_by: rating_count
-                endif
-              -%}
-              <li class="cited-rating__row">
-                <span class="cited-rating__row-label">{{ i }} star</span>
-                <span class="cited-rating__track">
-                  <span class="cited-rating__fill" style="width: {{ pct }}%;"></span>
-                </span>
-                <span class="cited-rating__row-pct">{{ pct }}%</span>
-              </li>
-            {%- endfor -%}
-          </ul>
-        {%- endif -%}
+        {%- render 'cited-breakdown', breakdown: rating_breakdown, total: rating_count, scale_max: scale_max -%}
 
         {%- comment -%}
           The way out of the panel. Without it the breakdown is a dead end —
@@ -223,11 +194,77 @@
         </a>
       </div>
     </details>
-  {%- else -%}
-    <div class="cited-reviews__empty">
-      <p>{{ empty_text | escape }}</p>
-    </div>
   {%- endif -%}
+
+  {%- comment -%}
+    ── Reviews section ──
+
+    Two columns: the verdict on the left, the evidence on the right. The left
+    column is what a shopper checks before deciding whether to read any further
+    — score, distribution, and the invitation to add their own — and it stays
+    put while they read down the list.
+
+    The compact disclosure above is lifted out of this section entirely on the
+    embed path and dropped under the product title, so this header is not a
+    duplicate of it: it is the only rating display left here once that move has
+    happened.
+  {%- endcomment -%}
+  <div class="cited-reviews__layout">
+    <aside class="cited-reviews__aside">
+      {%- if has_reviews -%}
+        <p class="cited-reviews__score">
+          {%- render 'cited-stars', rating: rating_avg, scale_max: scale_max, size: 18 -%}
+          <strong>{{ rating_avg | round: 1 }} out of {{ scale_max }}</strong>
+        </p>
+        <p class="cited-reviews__total">
+          {{ rating_count }} global rating{% unless rating_count == 1 %}s{% endunless %}
+        </p>
+
+        {%- render 'cited-breakdown', breakdown: rating_breakdown, total: rating_count, scale_max: scale_max -%}
+      {%- else -%}
+        <div class="cited-reviews__empty">
+          <p>{{ empty_text | escape }}</p>
+        </div>
+      {%- endif -%}
+
+      {%- comment -%}
+        ── Review this product ──
+
+        Signed out, this is a LINK to the login page rather than a form that
+        rejects you after you have typed. Reviews require an account — a
+        signed-out submission is an unverifiable claim, which makes
+        "verified purchase" meaningless and one-review-per-customer
+        unenforceable — so the account step is unavoidable, and the honest
+        thing is to say so before the shopper invests any effort.
+
+        `return_url` brings them back to this product afterwards.
+        `routes.account_login_url`, never a hardcoded /account/login: the path
+        differs on stores using new customer accounts and on any store with a
+        locale prefix, where the literal path 404s or drops the shopper into
+        the wrong locale.
+
+        Signed in, it is a `details` that reveals the form in place. No
+        JavaScript, no navigation, and the form is still a plain POST if the
+        disclosure is opened with scripting off.
+      {%- endcomment -%}
+      {%- if enable_form -%}
+        <div class="cited-reviews__cta">
+          <p class="cited-reviews__cta-title">Review this product</p>
+          <p class="cited-reviews__cta-sub">Share your thoughts with other customers</p>
+
+          {%- unless customer -%}
+            <a
+              class="cited-reviews__submit cited-reviews__cta-button"
+              href="{{ routes.account_login_url }}?return_url={{ product.url | url_encode }}"
+            >
+              {{ form_button | escape }}
+            </a>
+          {%- endunless -%}
+        </div>
+      {%- endif -%}
+    </aside>
+
+    <div class="cited-reviews__main">
 
   {%- comment -%}
     ── AI summary ──
@@ -430,32 +467,20 @@
     address up from Shopify rather than believing this form. A typed address
     is an unauthenticated claim and is treated as one.
   {%- endcomment -%}
-  {%- if enable_form -%}
-    <div class="cited-reviews__form-wrap">
-      <h3 class="cited-reviews__form-heading">{{ form_heading | escape }}</h3>
+  {%- comment -%}
+    Only for a signed-in shopper. Signed out, the invitation lives in the aside
+    above and is a link to the login page — saying so before any effort is
+    invested beats rejecting a filled-in form.
 
-      {%- comment -%}
-        Reviews require an account. The form is hidden from signed-out
-        visitors, but the server is the gate — anything a signed-out shopper
-        tells us about themselves is unverifiable, which makes one-review-per-
-        customer unenforceable and "verified purchase" meaningless.
-
-        `return_url` brings them back to the product they were reading rather
-        than dumping them in their account page.
-
-        `routes.account_login_url`, not a hardcoded /account/login: the path
-        differs on stores using new customer accounts and on any store with a
-        locale prefix, where the literal path 404s or drops the shopper into
-        the wrong locale. Shopify resolves the right one per store.
-      {%- endcomment -%}
-      {%- unless customer -%}
-        <div class="cited-reviews__signin">
-          <p>Only customers with an account can write a review.</p>
-          <a class="cited-reviews__submit" href="{{ routes.account_login_url }}?return_url={{ product.url | url_encode }}">
-            Sign in to write a review
-          </a>
-        </div>
-      {%- else -%}
+    A `details` rather than a form that is always open: the write form is the
+    largest thing in the block and almost every visitor is here to read, not to
+    write. Collapsed by default it stops dominating a section whose job is to
+    show what other people said. `open` is not set, so the server's HTML is the
+    collapsed state and no layout shift happens on load.
+  {%- endcomment -%}
+  {%- if enable_form and customer -%}
+    <details class="cited-reviews__form-wrap" id="cited-write-{{ uid }}">
+      <summary class="cited-reviews__form-heading">{{ form_heading | escape }}</summary>
 
       <form
         class="cited-reviews__form"
@@ -621,16 +646,17 @@
           <p class="cited-reviews__status" data-cited-status role="status" aria-live="polite"></p>
         </div>
       </form>
-      {%- endunless -%}
-    </div>
+    </details>
   {%- endif -%}
+    </div>
+  </div>
 </section>
 
 {%- comment -%}
   Submit without a reload. Loaded only when the form is on the page, and
   purely additive: the form works as a plain POST without it.
 {%- endcomment -%}
-{%- if enable_form -%}
+{%- if enable_form and customer -%}
   <script src="{{ 'cited-reviews-form.js' | asset_url }}" defer></script>
 {%- endif -%}
 
