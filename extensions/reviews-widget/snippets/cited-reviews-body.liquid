@@ -109,20 +109,37 @@
 {%- endcomment -%}
 {{ 'cited-reviews.css' | asset_url | stylesheet_tag }}
 
+{%- comment -%}
+  The merchant's palette, captured once so it can be stamped on BOTH the
+  section and the rating summary.
+
+  The summary is relocated out of this section on the embed path — it belongs
+  under the product title, and the rest of the block belongs further down the
+  page — and every colour here is a custom property inherited from the section
+  it would be leaving. Carrying its own copy makes it self-sufficient wherever
+  it lands, rather than falling back to the stylesheet defaults and quietly
+  ignoring the colours the merchant chose.
+{%- endcomment -%}
+{%- capture cited_vars -%}
+--cited-star: {{ star_color }};
+--cited-text: {{ text_color }};
+--cited-muted: {{ muted_color }};
+--cited-border: {{ border_color }};
+--cited-radius: {{ corner_radius }}px;
+--cited-gap: {{ spacing }}px;
+{%- endcapture -%}
+
 <section
   class="cited-reviews"
   id="cited-reviews-{{ uid }}"
   data-cited-product="{{ product.id }}"
   data-cited-per-page="{{ per_page }}"
-  {% if is_embed %}data-cited-embed data-cited-anchor="{{ anchor | escape }}"{% endif %}
-  style="
-    --cited-star: {{ star_color }};
-    --cited-text: {{ text_color }};
-    --cited-muted: {{ muted_color }};
-    --cited-border: {{ border_color }};
-    --cited-radius: {{ corner_radius }}px;
-    --cited-gap: {{ spacing }}px;
-  "
+  {% if is_embed %}
+    data-cited-embed
+    data-cited-anchor="{{ anchor | escape }}"
+    data-cited-title="{{ product.title | escape }}"
+  {% endif %}
+  style="{{ cited_vars }}"
   {{ shopify_attributes }}
 >
   {%- if heading != blank -%}
@@ -139,7 +156,7 @@
       this app exists to feed. The browser gives keyboard support, focus
       handling and Escape for free.
     {%- endcomment -%}
-    <details class="cited-rating">
+    <details class="cited-rating" data-cited-summary style="{{ cited_vars }}">
       <summary class="cited-rating__trigger">
         <span class="cited-rating__value">{{ rating_avg | round: 1 }}</span>
         {%- render 'cited-stars', rating: rating_avg, scale_max: scale_max, size: 15 -%}

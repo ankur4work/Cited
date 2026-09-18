@@ -57,6 +57,14 @@
  */
 .cited-rating { position: relative; display: inline-block; }
 
+/*
+ * Set only when the placement script has lifted this out of the block and
+ * dropped it under the product title. It is then sitting in the theme's own
+ * markup, between a heading and whatever the theme puts next, so it needs
+ * breathing room the in-block copy gets from the section's layout.
+ */
+.cited-rating--placed { margin: 6px 0 10px; }
+
 .cited-rating__trigger {
   display: inline-flex;
   align-items: center;
