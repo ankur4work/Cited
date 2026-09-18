@@ -132,12 +132,25 @@ async function trustedCustomer(
     );
     const customer = res.data?.customer;
     if (!customer) return null;
+
+    // Shopify's `displayName` falls back to the EMAIL ADDRESS for a customer
+    // with no first or last name — an account created at checkout, which is
+    // most of them. That address was then published as the review author on a
+    // public product page and inside the JSON-LD that Google indexes.
+    //
+    // Anything with an @ in it is refused here. A review displayed as
+    // "Anonymous" is a cosmetic loss; publishing a shopper's email address
+    // because they left their name blank is a privacy breach they never
+    // agreed to, and it is not undone by deleting it later.
+    const candidate = customer.firstName || customer.displayName || null;
+    const name = candidate && !candidate.includes('@') ? candidate : null;
+
     return {
       email: customer.email?.toLowerCase() ?? null,
       // First name alone by preference: a review signed "Priya" reads like a
       // person, and publishing a shopper's full surname next to a purchase is
       // more than they agreed to when they created an account.
-      name: customer.firstName || customer.displayName || null,
+      name,
     };
   } catch (err) {
     logger.warn(

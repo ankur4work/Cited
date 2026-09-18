@@ -54,16 +54,39 @@
   # Cited maintains the link itself: an app-owned list of product_review
   # metaobject references, newest first, kept in step by the syndication job.
   # `app` is the theme-app-extension alias for this app's reserved namespace.
-  assign reviews_list = product.metafields.app.reviews.value
+  # The app's reserved namespace, as LIQUID sees it.
+  #
+  # `$app` in the Admin API resolves to `app--{app_id}` on the shop, and that
+  # is the only accessor that works here. `product.metafields.app.reviews` —
+  # the form the documentation describes and the form this block used — returns
+  # blank, verified on a live storefront against a definition that exists with
+  # storefront=PUBLIC_READ and a value of size 2. That one wrong accessor is
+  # why the block rendered an aggregate above an empty review list on every
+  # store, and why AI summaries and the video upload input never appeared.
+  #
+  # The id is this app's and is fixed. `app` is still tried as a fallback, so
+  # if the documented alias does resolve somewhere, that path keeps working.
+  assign cited_ns = 'app--410130251777'
+
+  assign reviews_list = product.metafields[cited_ns].reviews.value
+  if reviews_list == blank
+    assign reviews_list = product.metafields.app.reviews.value
+  endif
   # Same reserved namespace as the review list above. Written by the AI summary
   # job for PRO stores only; absent everywhere else, which is why the render
   # below is guarded rather than conditional on any plan flag reaching Liquid.
-  assign review_summary = product.metafields.app.summary.value
+  assign review_summary = product.metafields[cited_ns].summary.value
+  if review_summary == blank
+    assign review_summary = product.metafields.app.summary.value
+  endif
   # The 1–5 histogram behind the breakdown panel, written by the aggregate job
   # from counts it already had. Absent on a store that has not resynced since
   # the field existed, which is why the panel below is guarded rather than
   # assumed.
-  assign rating_breakdown = product.metafields.app.breakdown.value
+  assign rating_breakdown = product.metafields[cited_ns].breakdown.value
+  if rating_breakdown == blank
+    assign rating_breakdown = product.metafields.app.breakdown.value
+  endif
 
   # Shop-level feature flags, written by the app when the plan changes. Liquid
   # has no way to ask what plan a store is on — there is no request to our
@@ -73,7 +96,10 @@
   # This decides what the form OFFERS. The proxy route decides what it ACCEPTS,
   # and that is the check that actually enforces anything: a theme edited to
   # restore the input gets a rejected upload, not a free feature.
-  assign cited_features = shop.metafields.app.features.value
+  assign cited_features = shop.metafields[cited_ns].features.value
+  if cited_features == blank
+    assign cited_features = shop.metafields.app.features.value
+  endif
   assign video_enabled = false
   if cited_features.video
     assign video_enabled = true
@@ -108,6 +134,7 @@
   still paints without a flash of unstyled content.
 {%- endcomment -%}
 {{ 'cited-reviews.css' | asset_url | stylesheet_tag }}
+
 
 {%- comment -%}
   The merchant's palette, captured once so it can be stamped on BOTH the
