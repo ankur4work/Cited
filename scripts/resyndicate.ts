@@ -14,7 +14,7 @@
  *   npx tsx --env-file=.env scripts/resyndicate.ts <shop.myshopify.com>
  */
 import { prisma } from '../lib/prisma';
-import { enqueueSyndicationBackfill } from '../jobs/enqueue';
+import { enqueueAggregateSync } from '../jobs/enqueue';
 import { connection } from '../jobs/queue';
 
 async function main(): Promise<void> {
@@ -47,11 +47,34 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const reviews = await prisma.review.count({ where: { storeId: store.id } });
+  // Aggregate sync, NOT syndicate:backfill. The backfill only picks up reviews
+  // whose syncStatus is not SYNCED — it projects reviews into metaobjects, and
+  // a store whose reviews are all already projected has nothing for it to do
+  // ("Backfill complete, processed: 0"). The product→reviews LIST metafield,
+  // which is the thing the storefront block actually reads, is written by the
+  // aggregate job. Republishing it means re-running that, per product.
+  const products = await prisma.product.findMany({
+    where: {
+      storeId: store.id,
+      reviews: { some: { status: 'PUBLISHED', metaobjectGid: { not: null } } },
+    },
+    select: { id: true, title: true },
+  });
 
-  await enqueueSyndicationBackfill({ storeId: store.id });
-  console.log(`Queued a syndication backfill for ${shopDomain} (${reviews} reviews on file).`);
-  console.log('The worker must be running. Watch its log for "syndicate:backfill".');
+  if (products.length === 0) {
+    console.log(`No products with published, syndicated reviews on ${shopDomain}.`);
+    return;
+  }
+
+  for (const p of products) {
+    // No debounce: this is a deliberate one-shot repair, and a 10s window
+    // would only delay it.
+    await enqueueAggregateSync({ storeId: store.id, productId: p.id, debounceMs: 0 });
+    console.log(`  queued ${p.title.slice(0, 50)}`);
+  }
+
+  console.log(`\nQueued ${products.length} aggregate sync(s) for ${shopDomain}.`);
+  console.log('The worker must be running. Watch its log for "Rating aggregate syndicated".');
 }
 
 main()

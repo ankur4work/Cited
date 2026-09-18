@@ -256,6 +256,15 @@ export async function enqueueAggregateSync(input: {
  * a store-scoped ID would collide with the running job and be discarded,
  * stopping the backfill dead after one chunk. Keying on the cursor also makes
  * re-triggering the same chunk idempotent.
+ *
+ * Routed through the coalescing helper so a FINISHED job with the same id is
+ * cleared first. Adding directly meant the first backfill a store ever ran left
+ * a completed `...-start` record behind, and BullMQ then silently discarded
+ * every later re-trigger — returning success, enqueuing nothing. A second run
+ * after fixing what syndication writes therefore did nothing at all, and said
+ * it had worked. Completed jobs are retained for 7 days, so this window is
+ * days wide, and the whole point of re-triggering a backfill is that the
+ * previous run's output is now known to be wrong.
  */
 export async function enqueueSyndicationBackfill(input: {
   storeId: string;
@@ -263,7 +272,7 @@ export async function enqueueSyndicationBackfill(input: {
   processed?: number;
   delayMs?: number;
 }): Promise<void> {
-  await syndicationQueue.add(
+  await addCoalescedSyndication(
     'syndicate:backfill',
     { storeId: input.storeId, cursor: input.cursor, processed: input.processed },
     {
