@@ -167,6 +167,19 @@
   font-variant-numeric: tabular-nums;
 }
 
+.cited-rating__more {
+  display: inline-block;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--cited-hairline);
+  width: 100%;
+  font-size: 0.875rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.cited-rating__more:hover { text-decoration: underline; }
+
 .cited-reviews__empty {
   padding: calc(var(--cited-gap) * 1.5);
   color: var(--cited-muted);
@@ -343,12 +356,19 @@
  * scrolling past twenty reviews needs a visible "your turn" boundary, and a
  * hairline alone does not provide one.
  */
+/*
+ * Bounded, not full-bleed. The block is often placed in a full-width section,
+ * where an unconstrained card stretched the write form across the entire page
+ * — a 1,800px-wide panel holding a 500px textarea, mostly empty. A form is
+ * read and filled in a column; its card should be one too.
+ */
 .cited-reviews__form-wrap {
   margin-top: var(--cited-gap);
   padding: calc(var(--cited-gap) * 0.75);
   border: 1px solid var(--cited-hairline);
   border-radius: var(--cited-radius);
   background: var(--cited-surface);
+  max-width: 30rem;
 }
 
 .cited-reviews__form-heading {
@@ -427,16 +447,58 @@
 
 .cited-reviews__optional { font-weight: 400; color: var(--cited-muted); }
 
-.cited-reviews__photos input[type='file'] {
-  font: inherit;
-  font-size: 0.875rem;
-  padding: 8px;
+/* ── File upload ───────────────────────────────────────────────────
+ *
+ * A small tile with an icon, in place of the browser's "Browse… No files
+ * selected" — an OS-styled control that ignores every theme setting and reads
+ * as a form from 1998 beside the rest of this block.
+ *
+ * The input is still a real <input type="file"> inside its <label>: hidden
+ * from sight, not from the accessibility tree or the tab order. Clicking the
+ * tile opens the picker through the label, with no JavaScript.
+ */
+.cited-upload { display: flex; align-items: center; gap: 10px; }
+
+/*
+ * Not `display: none` and not `visibility: hidden` — either removes the input
+ * from the tab order, leaving keyboard users no way to reach it at all.
+ */
+.cited-upload__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.cited-upload__tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex: none;
   border: 1px dashed var(--cited-border);
   border-radius: var(--cited-radius);
+  color: var(--cited-muted);
+  cursor: pointer;
   background: transparent;
-  width: 100%;
-  box-sizing: border-box;
 }
+
+.cited-upload:hover .cited-upload__tile { color: var(--cited-text); border-style: solid; }
+
+/* The input is invisible, so its focus ring has to be borrowed by the tile. */
+.cited-upload__input:focus-visible + .cited-upload__tile {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+  color: var(--cited-text);
+}
+
+.cited-upload__hint { color: var(--cited-muted); font-size: 0.75rem; line-height: 1.4; }
 
 /*
  * Signed out, this said "you cannot use this yet" across three stacked rows
@@ -502,7 +564,9 @@
   border-color: transparent;
 }
 
-.cited-reviews__field textarea { resize: vertical; min-height: 6.5rem; }
+/* Three rows is enough to start typing in; it grows from there. A tall empty
+ * box reads as a demand for an essay, which is how you get no review at all. */
+.cited-reviews__field textarea { resize: vertical; min-height: 4.5rem; }
 
 /*
  * Outlined, not filled. A filled button needs a foreground colour, and the

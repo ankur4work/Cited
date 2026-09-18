@@ -207,6 +207,20 @@
             {%- endfor -%}
           </ul>
         {%- endif -%}
+
+        {%- comment -%}
+          The way out of the panel. Without it the breakdown is a dead end —
+          a shopper who opens it has decided the average is not enough and
+          wants to read what people actually wrote, and on the embed path the
+          reviews themselves are a long way down the page.
+
+          A plain in-page anchor, so it works with scripting off and the back
+          button behaves.
+        {%- endcomment -%}
+        <a class="cited-rating__more" href="#cited-reviews-{{ uid }}">
+          See all {{ rating_count }} review{% unless rating_count == 1 %}s{% endunless %}
+          <span aria-hidden="true">&rsaquo;</span>
+        </a>
       </div>
     </details>
   {%- else -%}
@@ -481,7 +495,7 @@
               >
               <label class="cited-rate__label" for="cited-rate-{{ uid }}-{{ value }}">
                 <span class="cited-rate__sr">{{ value }} star{% if value != 1 %}s{% endif %}</span>
-                <svg viewBox="0 0 20 20" width="30" height="30" aria-hidden="true" focusable="false">
+                <svg viewBox="0 0 20 20" width="26" height="26" aria-hidden="true" focusable="false">
                   <path d="M10 1.6l2.6 5.2 5.8.85-4.2 4.1 1 5.75L10 14.8l-5.2 2.7 1-5.75L1.6 7.65l5.8-.85z"/>
                 </svg>
               </label>
@@ -498,7 +512,7 @@
           <span class="cited-reviews__field-label">Your review</span>
           <textarea
             name="body"
-            rows="5"
+            rows="3"
             maxlength="5000"
             required
             placeholder="What did you think? How did it work out for you?"
@@ -511,15 +525,37 @@
           attribute here is a courtesy to the file picker, not the limit.
         {%- endcomment -%}
         {%- if show_media -%}
+          {%- comment -%}
+            The native file input renders as "Browse… No files selected" — an
+            OS-styled control that ignores every theme setting, spans whatever
+            width it likes and reads as a form from 1998 next to the rest of
+            this block.
+
+            So the input is visually hidden but left in the DOM, focusable and
+            fully functional: it is a real <input type="file"> inside its
+            <label>, so clicking the tile opens the picker with no JavaScript
+            and keyboard users tab straight to it. The tile is decoration over
+            a working control, not a replacement for one.
+          {%- endcomment -%}
           <label class="cited-reviews__field cited-reviews__photos">
             <span class="cited-reviews__field-label">Photos <span class="cited-reviews__optional">optional</span></span>
-            <input
-              type="file"
-              name="photos"
-              accept="image/jpeg,image/png,image/webp,image/gif"
-              multiple
-            >
-            <small>Up to 4 images, 5 MB each.</small>
+            <span class="cited-upload">
+              <input
+                class="cited-upload__input"
+                type="file"
+                name="photos"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                multiple
+              >
+              <span class="cited-upload__tile">
+                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+                  <rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/>
+                  <circle cx="8.5" cy="10" r="1.6" fill="currentColor"/>
+                  <path d="M4 17l4.5-4.5 3 3L15 12l5 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </span>
+              <small class="cited-upload__hint">Up to 4 images, 5 MB each.</small>
+            </span>
           </label>
 
           {%- comment -%}
@@ -533,12 +569,21 @@
           {%- if video_enabled -%}
           <label class="cited-reviews__field cited-reviews__video">
             <span class="cited-reviews__field-label">Video <span class="cited-reviews__optional">optional</span></span>
-            <input
-              type="file"
-              name="video"
-              accept="video/mp4,video/quicktime,video/webm"
-            >
-            <small>One video, up to 50 MB. It may take a minute to appear after posting.</small>
+            <span class="cited-upload">
+              <input
+                class="cited-upload__input"
+                type="file"
+                name="video"
+                accept="video/mp4,video/quicktime,video/webm"
+              >
+              <span class="cited-upload__tile">
+                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+                  <rect x="3" y="6" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/>
+                  <path d="M15 10.5l5-2.5v8l-5-2.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+                </svg>
+              </span>
+              <small class="cited-upload__hint">One video, up to 50 MB. It may take a minute to appear.</small>
+            </span>
           </label>
           {%- endif -%}
         {%- endif -%}
@@ -548,9 +593,19 @@
           the app resolves the name and address server-side from the customer
           id the proxy signs — which is the only version of it worth trusting.
         {%- endcomment -%}
-        <p class="cited-reviews__as">
-          Posting as <strong>{{ customer.first_name | default: customer.name | escape }}</strong>
-        </p>
+        {%- comment -%}
+          Only when there is actually a name to show. A Shopify customer can
+          have neither first_name nor name — an account created at checkout
+          with just an email has both blank — and this rendered as a dangling
+          "Posting as" with nothing after it, which reads like a bug to the
+          shopper and tells them nothing either way.
+        {%- endcomment -%}
+        {%- assign posting_as = customer.first_name | default: customer.name -%}
+        {%- if posting_as != blank -%}
+          <p class="cited-reviews__as">
+            Posting as <strong>{{ posting_as | escape }}</strong>
+          </p>
+        {%- endif -%}
 
         {%- comment -%}
           Honeypot. Hidden from people by CSS and from screen readers by
