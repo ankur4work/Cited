@@ -1,0 +1,101 @@
+{% comment %}
+  Cited — the rating line on its own, as an APP BLOCK.
+
+  The same summary the embed drops under the product title, but placed by the
+  merchant exactly where they want it: under the title, beside the price, above
+  the buy button. No JavaScript, so unlike the embed's copy this one cannot be
+  mispositioned by a theme the placement script does not recognise.
+
+  It renders the aggregate ONLY — no review list, no form. A merchant who wants
+  the full block adds `Cited Reviews` as well; this one is for stores that want
+  a rating near the price and the reviews themselves further down.
+{% endcomment %}
+
+{%- liquid
+  assign rating_field = product.metafields.reviews.rating
+  assign count_field = product.metafields.reviews.rating_count
+
+  assign rating_avg = 0
+  if rating_field != blank and rating_field.value != blank
+    assign rating_avg = rating_field.value.rating | times: 1.0
+  endif
+
+  assign rating_count = 0
+  if count_field != blank
+    assign rating_count = count_field.value | plus: 0
+  endif
+
+  # `| floor`, never `| plus: 0`. The metafield stores scale_max as "5.0" and
+  # a float cannot be a Liquid range bound — `(1..5.0)` raises "invalid
+  # integer" and the star loop then renders nothing at all.
+  assign scale_max = 5
+  if rating_field != blank and rating_field.value.scale_max != blank
+    assign scale_max = rating_field.value.scale_max | floor
+  endif
+  if scale_max < 1
+    assign scale_max = 5
+  endif
+-%}
+
+{%- if rating_count > 0 -%}
+  {{ 'cited-reviews.css' | asset_url | stylesheet_tag }}
+
+  <div
+    class="cited-rating cited-rating--placed cited-rating--static"
+    style="
+      --cited-star: {{ block.settings.star_color }};
+      --cited-text: {{ block.settings.text_color }};
+      --cited-muted: {{ block.settings.muted_color }};
+      --cited-border: {{ block.settings.border_color }};
+    "
+    {{ block.shopify_attributes }}
+  >
+    <a class="cited-rating__trigger" href="{{ block.settings.anchor | default: '#cited-reviews' }}">
+      <span class="cited-rating__value">{{ rating_avg | round: 1 }}</span>
+      {%- render 'cited-stars', rating: rating_avg, scale_max: scale_max, size: 15 -%}
+      <span class="cited-rating__count">
+        {%- if rating_count == 1 -%}1 review{%- else -%}{{ rating_count }} reviews{%- endif -%}
+      </span>
+    </a>
+  </div>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Cited Star Rating",
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "anchor",
+      "label": "Link to",
+      "default": "#cited-reviews",
+      "info": "Where the rating links to. Leave as is to jump to the reviews block on the same page."
+    },
+    {
+      "type": "color",
+      "id": "star_color",
+      "label": "Star colour",
+      "default": "#FFB800"
+    },
+    {
+      "type": "color",
+      "id": "text_color",
+      "label": "Text colour",
+      "default": "#1A1A1A"
+    },
+    {
+      "type": "color",
+      "id": "muted_color",
+      "label": "Secondary text colour",
+      "default": "#6B7280"
+    },
+    {
+      "type": "color",
+      "id": "border_color",
+      "label": "Border colour",
+      "default": "#E5E7EB"
+    }
+  ]
+}
+{% endschema %}

@@ -1,0 +1,141 @@
+{% comment %}
+  Cited — a short review quote, as an APP BLOCK.
+
+  Built to sit next to the buy button: the moment a shopper hesitates is the
+  moment a sentence from someone who already bought it is worth most. It shows
+  the highest-relevance reviews with actual text, truncated, not the newest —
+  a one-word "Great!" posted this morning persuades nobody.
+
+  Server-rendered from the same metaobject list the full block reads, so this
+  costs no request and no JavaScript.
+{% endcomment %}
+
+{%- liquid
+  # `$app` resolves on the shop to `app--{app_id}`, which is the only form
+  # Liquid exposes. `product.metafields.app.reviews` returns blank — verified
+  # against a live storefront on a definition that exists with
+  # storefront=PUBLIC_READ. The documented alias is kept as a fallback.
+  assign cited_ns = 'app--410130251777'
+  assign reviews_list = product.metafields[cited_ns].reviews.value
+  if reviews_list == blank
+    assign reviews_list = product.metafields.app.reviews.value
+  endif
+
+  assign rating_field = product.metafields.reviews.rating
+  assign scale_max = 5
+  if rating_field != blank and rating_field.value.scale_max != blank
+    assign scale_max = rating_field.value.scale_max | floor
+  endif
+  if scale_max < 1
+    assign scale_max = 5
+  endif
+
+  assign wanted = block.settings.quote_count | default: 1 | floor
+-%}
+
+{%- if reviews_list != blank -%}
+  {{ 'cited-reviews.css' | asset_url | stylesheet_tag }}
+
+  <div
+    class="cited-snippet"
+    style="
+      --cited-star: {{ block.settings.star_color }};
+      --cited-text: {{ block.settings.text_color }};
+      --cited-muted: {{ block.settings.muted_color }};
+      --cited-border: {{ block.settings.border_color }};
+      --cited-radius: {{ block.settings.corner_radius }}px;
+    "
+    {{ block.shopify_attributes }}
+  >
+    {%- assign shown = 0 -%}
+    {%- for review in reviews_list -%}
+      {%- if shown >= wanted -%}{%- break -%}{%- endif -%}
+
+      {%- comment -%}
+        Only reviews that actually said something. A rating with no words is
+        already counted in the aggregate and adds nothing here.
+      {%- endcomment -%}
+      {%- if review.body != blank -%}
+        {%- liquid
+          assign shown = shown | plus: 1
+          assign r_rating = 0
+          if review.rating != blank and review.rating.value != blank
+            assign r_rating = review.rating.value.rating | times: 1.0
+          endif
+          assign r_author = review.author_display_name | default: block.settings.anonymous_label
+        -%}
+        <figure class="cited-snippet__item">
+          <div class="cited-snippet__head">
+            {%- render 'cited-stars', rating: r_rating, scale_max: scale_max, size: 13 -%}
+            {%- if review.app_verification_status == 'verified_buyer' -%}
+              <span class="cited-snippet__verified">Verified purchase</span>
+            {%- endif -%}
+          </div>
+          <blockquote class="cited-snippet__quote">
+            {{ review.body | strip_html | truncate: 140 | escape }}
+          </blockquote>
+          <figcaption class="cited-snippet__author">— {{ r_author | escape }}</figcaption>
+        </figure>
+      {%- endif -%}
+    {%- endfor -%}
+  </div>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Cited Review Snippet",
+  "target": "section",
+  "settings": [
+    {
+      "type": "range",
+      "id": "quote_count",
+      "label": "Quotes to show",
+      "min": 1,
+      "max": 3,
+      "step": 1,
+      "default": 1,
+      "info": "Kept small on purpose: this sits beside the buy button, not in place of the reviews block."
+    },
+    {
+      "type": "text",
+      "id": "anonymous_label",
+      "label": "Name shown when a reviewer gave none",
+      "default": "Verified customer"
+    },
+    {
+      "type": "color",
+      "id": "star_color",
+      "label": "Star colour",
+      "default": "#FFB800"
+    },
+    {
+      "type": "color",
+      "id": "text_color",
+      "label": "Text colour",
+      "default": "#1A1A1A"
+    },
+    {
+      "type": "color",
+      "id": "muted_color",
+      "label": "Secondary text colour",
+      "default": "#6B7280"
+    },
+    {
+      "type": "color",
+      "id": "border_color",
+      "label": "Border colour",
+      "default": "#E5E7EB"
+    },
+    {
+      "type": "range",
+      "id": "corner_radius",
+      "label": "Corner radius",
+      "min": 0,
+      "max": 24,
+      "step": 2,
+      "unit": "px",
+      "default": 8
+    }
+  ]
+}
+{% endschema %}

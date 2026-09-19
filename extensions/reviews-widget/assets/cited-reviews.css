@@ -258,6 +258,46 @@
   .cited-reviews__layout { grid-template-columns: 1fr; }
 }
 
+/* ── Review snippet block ──────────────────────────────────────────
+ * A quote beside the buy button. Deliberately quiet: it is there to reassure
+ * someone already looking at the price, not to compete with it.
+ */
+.cited-snippet {
+  display: grid;
+  gap: 10px;
+  margin-block: 12px;
+  font-family: inherit;
+}
+
+.cited-snippet__item {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--cited-hairline);
+  border-radius: var(--cited-radius);
+  background: var(--cited-surface);
+}
+
+.cited-snippet__head { display: flex; align-items: center; gap: 8px; }
+
+.cited-snippet__verified {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #0a7c42;
+}
+
+.cited-snippet__quote {
+  margin: 6px 0 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--cited-text);
+}
+
+.cited-snippet__author { margin-top: 4px; font-size: 0.75rem; color: var(--cited-muted); }
+
+/* The app-block rating is a link, not a disclosure — there is no panel to
+ * open, so it carries no caret and must not look clickable-but-inert. */
+.cited-rating--static .cited-rating__trigger { text-decoration: none; color: inherit; }
+
 .cited-reviews__empty {
   padding: calc(var(--cited-gap) * 1.5);
   color: var(--cited-muted);
