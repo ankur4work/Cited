@@ -30,7 +30,23 @@
     assign scale_max = 5
   endif
 
-  assign wanted = block.settings.quote_count | default: 1 | floor
+  # Appearance and copy come from the app, so every Cited widget matches.
+  assign ws = shop.metafields[cited_ns].widget_settings.value
+  if ws == blank
+    assign ws = shop.metafields.app.widget_settings.value
+  endif
+
+  assign star_color = ws.star_color | default: '#FFB800'
+  assign text_color = ws.text_color | default: '#1A1A1A'
+  assign muted_color = ws.muted_color | default: '#6B7280'
+  assign border_color = ws.border_color | default: '#E5E7EB'
+  assign corner_radius = ws.corner_radius | default: 8
+  assign anonymous_label = ws.anonymous_label | default: 'Verified customer'
+
+  assign wanted = ws.snippet_quotes | default: 1 | floor
+  if wanted < 1
+    assign wanted = 1
+  endif
 -%}
 
 {%- if reviews_list != blank -%}
@@ -39,11 +55,11 @@
   <div
     class="cited-snippet"
     style="
-      --cited-star: {{ block.settings.star_color }};
-      --cited-text: {{ block.settings.text_color }};
-      --cited-muted: {{ block.settings.muted_color }};
-      --cited-border: {{ block.settings.border_color }};
-      --cited-radius: {{ block.settings.corner_radius }}px;
+      --cited-star: {{ star_color }};
+      --cited-text: {{ text_color }};
+      --cited-muted: {{ muted_color }};
+      --cited-border: {{ border_color }};
+      --cited-radius: {{ corner_radius }}px;
     "
     {{ block.shopify_attributes }}
   >
@@ -87,54 +103,8 @@
   "target": "section",
   "settings": [
     {
-      "type": "range",
-      "id": "quote_count",
-      "label": "Quotes to show",
-      "min": 1,
-      "max": 3,
-      "step": 1,
-      "default": 1,
-      "info": "Kept small on purpose: this sits beside the buy button, not in place of the reviews block."
-    },
-    {
-      "type": "text",
-      "id": "anonymous_label",
-      "label": "Name shown when a reviewer gave none",
-      "default": "Verified customer"
-    },
-    {
-      "type": "color",
-      "id": "star_color",
-      "label": "Star colour",
-      "default": "#FFB800"
-    },
-    {
-      "type": "color",
-      "id": "text_color",
-      "label": "Text colour",
-      "default": "#1A1A1A"
-    },
-    {
-      "type": "color",
-      "id": "muted_color",
-      "label": "Secondary text colour",
-      "default": "#6B7280"
-    },
-    {
-      "type": "color",
-      "id": "border_color",
-      "label": "Border colour",
-      "default": "#E5E7EB"
-    },
-    {
-      "type": "range",
-      "id": "corner_radius",
-      "label": "Corner radius",
-      "min": 0,
-      "max": 24,
-      "step": 2,
-      "unit": "px",
-      "default": 8
+      "type": "paragraph",
+      "content": "How many quotes to show, along with colours and text, are set in the Cited app under Widgets → Customize, so every Cited widget on your store matches."
     }
   ]
 }

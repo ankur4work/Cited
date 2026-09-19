@@ -14,6 +14,8 @@ import {
   Text,
 } from '@shopify/polaris';
 import type { WidgetDef } from '@/lib/shopify/widgets';
+import type { WidgetSettings } from '@/lib/widgets/settings';
+import { WidgetCustomizer } from './widget-customizer';
 
 export interface WidgetCard extends WidgetDef {
   addUrl: string;
@@ -30,9 +32,11 @@ export interface WidgetCard extends WidgetDef {
 export function WidgetsView({
   widgets,
   shopDomain,
+  settings,
 }: {
   widgets: WidgetCard[];
   shopDomain: string;
+  settings: WidgetSettings;
 }) {
   const blocks = widgets.filter((w) => w.kind === 'block');
   const embed = widgets.find((w) => w.kind === 'embed');
@@ -40,7 +44,7 @@ export function WidgetsView({
   return (
     <Page
       title="Widgets"
-      subtitle="Choose where reviews appear on your storefront."
+      subtitle="Choose where reviews appear on your storefront, and how they look."
     >
       <Layout>
         {embed && (
@@ -92,13 +96,18 @@ export function WidgetsView({
                         ))}
                       </List>
 
+                      {/*
+                        Only "Add widget" leaves the app. Placement is
+                        genuinely theme-editor work — it is the merchant
+                        choosing a spot in their own layout — whereas
+                        appearance is ours, and lives in the customiser above
+                        so one setting covers every widget at once.
+                      */}
                       <InlineStack gap="200">
                         <Button variant="primary" url={w.addUrl} target="_blank">
                           Add widget
                         </Button>
-                        <Button url={w.addUrl} target="_blank">
-                          Customize
-                        </Button>
+                        <WidgetCustomizer initial={settings} />
                       </InlineStack>
                     </BlockStack>
                   </Card>

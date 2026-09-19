@@ -71,6 +71,69 @@ export async function setStorefrontFeatures(
 }
 
 /**
+ * Publish the widget appearance a merchant chose in the app.
+ *
+ * The blocks read this instead of their own theme-editor settings, so the
+ * customiser in the admin is the single place these values exist. A second set
+ * of controls in the theme editor would be a copy that silently disagrees with
+ * what the storefront renders.
+ */
+export async function setWidgetSettings(
+  client: ShopifyClient,
+  settings: Record<string, string | number>,
+): Promise<void> {
+  const shop = await client.graphql<{ shop: { id: string } }>(SHOP_QUERY);
+  const shopId = shop.data?.shop?.id;
+  if (!shopId) throw new MetaobjectError('widget settings: could not resolve shop id');
+
+  const resp = await client.graphql<{
+    metafieldsSet: {
+      userErrors: Array<{ field: string[] | null; message: string; code?: string }>;
+    } | null;
+  }>(METAFIELDS_SET, {
+    metafields: [
+      {
+        ownerId: shopId,
+        namespace: '$app',
+        key: 'widget_settings',
+        type: 'json',
+        value: JSON.stringify(settings),
+      },
+    ],
+  });
+
+  if (!resp.data?.metafieldsSet) {
+    const message =
+      resp.errors?.map((e) => e.message).join('; ') ?? 'metafieldsSet returned no data';
+    throw new MetaobjectError(`widget settings: ${message}`);
+  }
+
+  const errors = resp.data.metafieldsSet.userErrors ?? [];
+  if (errors.length > 0) {
+    throw new MetaobjectError(`widget settings: ${errors.map((e) => e.message).join('; ')}`);
+  }
+}
+
+const WIDGET_SETTINGS_QUERY = /* GraphQL */ `
+  query CitedWidgetSettings {
+    shop {
+      metafield(namespace: "$app", key: "widget_settings") {
+        jsonValue
+      }
+    }
+  }
+`;
+
+/** Read back what was published. Returns null when the merchant never saved. */
+export async function getWidgetSettings(client: ShopifyClient): Promise<unknown | null> {
+  const resp = await client.graphql<{
+    shop: { metafield: { jsonValue: unknown } | null };
+  }>(WIDGET_SETTINGS_QUERY);
+
+  return resp.data?.shop?.metafield?.jsonValue ?? null;
+}
+
+/**
  * Refresh the storefront flags for a store, never fatally.
  *
  * Called from the plan-change webhook, where the plan write has already

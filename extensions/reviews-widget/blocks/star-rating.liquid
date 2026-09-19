@@ -35,6 +35,20 @@
   if scale_max < 1
     assign scale_max = 5
   endif
+
+  # Appearance comes from the app, not this block. One shop-level record drives
+  # every Cited widget, so the rating beside the price cannot disagree with the
+  # reviews below it.
+  assign cited_ns = 'app--410130251777'
+  assign ws = shop.metafields[cited_ns].widget_settings.value
+  if ws == blank
+    assign ws = shop.metafields.app.widget_settings.value
+  endif
+
+  assign star_color = ws.star_color | default: '#FFB800'
+  assign text_color = ws.text_color | default: '#1A1A1A'
+  assign muted_color = ws.muted_color | default: '#6B7280'
+  assign border_color = ws.border_color | default: '#E5E7EB'
 -%}
 
 {%- if rating_count > 0 -%}
@@ -43,10 +57,10 @@
   <div
     class="cited-rating cited-rating--placed cited-rating--static"
     style="
-      --cited-star: {{ block.settings.star_color }};
-      --cited-text: {{ block.settings.text_color }};
-      --cited-muted: {{ block.settings.muted_color }};
-      --cited-border: {{ block.settings.border_color }};
+      --cited-star: {{ star_color }};
+      --cited-text: {{ text_color }};
+      --cited-muted: {{ muted_color }};
+      --cited-border: {{ border_color }};
     "
     {{ block.shopify_attributes }}
   >
@@ -73,28 +87,8 @@
       "info": "Where the rating links to. Leave as is to jump to the reviews block on the same page."
     },
     {
-      "type": "color",
-      "id": "star_color",
-      "label": "Star colour",
-      "default": "#FFB800"
-    },
-    {
-      "type": "color",
-      "id": "text_color",
-      "label": "Text colour",
-      "default": "#1A1A1A"
-    },
-    {
-      "type": "color",
-      "id": "muted_color",
-      "label": "Secondary text colour",
-      "default": "#6B7280"
-    },
-    {
-      "type": "color",
-      "id": "border_color",
-      "label": "Border colour",
-      "default": "#E5E7EB"
+      "type": "paragraph",
+      "content": "Colours and text are set in the Cited app, under Widgets → Customize, so every Cited widget on your store matches."
     }
   ]
 }

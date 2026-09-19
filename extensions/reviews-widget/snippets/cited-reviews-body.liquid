@@ -100,6 +100,35 @@
   if cited_features == blank
     assign cited_features = shop.metafields.app.features.value
   endif
+
+  # ── Appearance, chosen in the app ──
+  #
+  # These used to be block settings, which meant every theme, template and
+  # duplicated block carried its own copy: a merchant changed their star colour
+  # in one place and the rating beside the price stayed yellow. One shop-level
+  # record now drives every Cited block.
+  #
+  # Each value falls back to what the caller passed, so a store that has never
+  # opened the customiser renders exactly as before and nothing depends on the
+  # metafield existing.
+  assign ws = shop.metafields[cited_ns].widget_settings.value
+  if ws == blank
+    assign ws = shop.metafields.app.widget_settings.value
+  endif
+
+  if ws != blank
+    assign star_color = ws.star_color | default: star_color
+    assign text_color = ws.text_color | default: text_color
+    assign muted_color = ws.muted_color | default: muted_color
+    assign border_color = ws.border_color | default: border_color
+    assign corner_radius = ws.corner_radius | default: corner_radius
+    assign spacing = ws.spacing | default: spacing
+    assign heading = ws.heading | default: heading
+    assign empty_text = ws.empty_text | default: empty_text
+    assign anonymous_label = ws.anonymous_label | default: anonymous_label
+    assign form_heading = ws.form_heading | default: form_heading
+    assign form_button = ws.form_button | default: form_button
+  endif
   assign video_enabled = false
   if cited_features.video
     assign video_enabled = true

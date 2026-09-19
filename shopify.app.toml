@@ -184,6 +184,14 @@ type = "json"
 name = "Cited feature flags"
 access.storefront = "public_read"
 
+# Widget appearance and copy, chosen in the app under Widgets → Customize.
+# One shop-level record drives every Cited block, so the rating beside the
+# price cannot disagree with the reviews below it.
+[shop.metafields.app.widget_settings]
+type = "json"
+name = "Cited widget settings"
+access.storefront = "public_read"
+
 [pos]
 embedded = false
 
