@@ -58,3 +58,6 @@ scratch/
 # local uploads / media fixtures
 uploads/
 media-tmp/
+
+# Claude Code local state — worktrees, session scratch
+.claude/
