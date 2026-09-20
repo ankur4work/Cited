@@ -114,6 +114,49 @@ export async function setWidgetSettings(
   }
 }
 
+/**
+ * Publish store-wide review data for the widgets that have no product.
+ *
+ * A home-page carousel, a footer testimonial strip and a header review counter
+ * all render where `product` is not in scope, and the storefront makes no
+ * request to us. This is the only route their data can take.
+ */
+export async function setStorefrontDigest(
+  client: ShopifyClient,
+  digest: unknown,
+): Promise<void> {
+  const shop = await client.graphql<{ shop: { id: string } }>(SHOP_QUERY);
+  const shopId = shop.data?.shop?.id;
+  if (!shopId) throw new MetaobjectError('storefront digest: could not resolve shop id');
+
+  const resp = await client.graphql<{
+    metafieldsSet: {
+      userErrors: Array<{ field: string[] | null; message: string; code?: string }>;
+    } | null;
+  }>(METAFIELDS_SET, {
+    metafields: [
+      {
+        ownerId: shopId,
+        namespace: '$app',
+        key: 'digest',
+        type: 'json',
+        value: JSON.stringify(digest),
+      },
+    ],
+  });
+
+  if (!resp.data?.metafieldsSet) {
+    const message =
+      resp.errors?.map((e) => e.message).join('; ') ?? 'metafieldsSet returned no data';
+    throw new MetaobjectError(`storefront digest: ${message}`);
+  }
+
+  const errors = resp.data.metafieldsSet.userErrors ?? [];
+  if (errors.length > 0) {
+    throw new MetaobjectError(`storefront digest: ${errors.map((e) => e.message).join('; ')}`);
+  }
+}
+
 const WIDGET_SETTINGS_QUERY = /* GraphQL */ `
   query CitedWidgetSettings {
     shop {

@@ -25,6 +25,7 @@ import { reconcileMetaobjectProcessor } from './processors/reconcile-metaobject'
 import { syndicateBackfillProcessor } from './processors/syndicate-backfill';
 import { summarizeProductProcessor } from './processors/summarize-product';
 import { mediaBackfillProcessor } from './processors/media-backfill';
+import { storefrontDigestProcessor } from './processors/storefront-digest';
 import { translateReviewProcessor } from './processors/translate-review';
 import { emailScheduleProcessor } from './processors/email-schedule';
 import { emailRequestProcessor } from './processors/email-request';
@@ -265,6 +266,7 @@ const maintenanceHandlers: Record<MaintenanceJobName, MaintenanceHandler> = {
   'compliance:purge': compliancePurgeProcessor,
   'retention:sweep': retentionSweepProcessor,
   'media:backfill': mediaBackfillProcessor,
+  'storefront:digest': storefrontDigestProcessor as MaintenanceHandler,
   // Declared in queue.ts but not yet built. Throwing beats a no-op handler,
   // which would ACK real work as done and silently retain media forever.
   'media-lifecycle': async () => {

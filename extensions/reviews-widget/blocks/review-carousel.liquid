@@ -1,0 +1,78 @@
+{% comment %}
+  Cited — a carousel of the store's best reviews, for any page.
+
+  Reads the store-wide digest, so it works on the home page, a collection, a
+  landing page — anywhere `product` is not in scope.
+
+  Scrolling is CSS: `overflow-x: auto` with `scroll-snap`. No JavaScript, no
+  carousel library, and it works with a trackpad, a touchscreen, arrow keys and
+  a screen reader without any of that being implemented by hand. The arrow
+  buttons are anchors to the cards themselves, so they work with scripting off.
+{% endcomment %}
+
+{%- render 'cited-digest' -%}
+
+{%- if cited_reviews != blank and cited_reviews.size > 0 -%}
+  {{ 'cited-reviews.css' | asset_url | stylesheet_tag }}
+
+  <section class="cited-strip" style="{{ cited_style }}" {{ block.shopify_attributes }}>
+    {%- if block.settings.heading != blank -%}
+      <div class="cited-strip__head">
+        <h2 class="cited-strip__heading">{{ block.settings.heading | escape }}</h2>
+        {%- if cited_count > 0 -%}
+          <p class="cited-strip__meta">
+            {%- render 'cited-stars', rating: cited_rating, scale_max: 5, size: 14 -%}
+            <span>{{ cited_rating }} from {{ cited_count }} review{% unless cited_count == 1 %}s{% endunless %}</span>
+          </p>
+        {%- endif -%}
+      </div>
+    {%- endif -%}
+
+    <ul class="cited-strip__track" role="list">
+      {%- for r in cited_reviews limit: block.settings.max_reviews -%}
+        <li class="cited-strip__item" id="cited-slide-{{ block.id }}-{{ forloop.index }}">
+          {%- render 'cited-quote-card',
+            r: r,
+            scale_max: 5,
+            anon: cited_anon,
+            show_product: block.settings.show_product
+          -%}
+        </li>
+      {%- endfor -%}
+    </ul>
+  </section>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Cited Review Carousel",
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "What our customers say"
+    },
+    {
+      "type": "range",
+      "id": "max_reviews",
+      "label": "Reviews to show",
+      "min": 3,
+      "max": 12,
+      "step": 1,
+      "default": 8
+    },
+    {
+      "type": "checkbox",
+      "id": "show_product",
+      "label": "Link each review to its product",
+      "default": true
+    },
+    {
+      "type": "paragraph",
+      "content": "Colours and text are set in the Cited app under Widgets → Customize, so every Cited widget matches."
+    }
+  ]
+}
+{% endschema %}

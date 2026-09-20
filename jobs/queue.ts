@@ -167,7 +167,8 @@ export type MaintenanceJobName =
   | 'compliance:purge'
   | 'retention:sweep'
   | 'media:backfill'
-  | 'media-lifecycle';
+  | 'media-lifecycle'
+  | 'storefront:digest';
 
 export interface MaintenanceJobData {
   /** Null for a compliance request against a shop that never installed. */

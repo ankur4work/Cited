@@ -11,7 +11,7 @@ import {
 } from '@/lib/shopify/metaobjects';
 import { ensureReviewListDefinition } from '@/lib/shopify/metafield-definitions';
 import { recomputeProductAggregate } from '@/lib/reviews/aggregate';
-import { enqueueProductSummary } from '../enqueue';
+import { enqueueProductSummary, enqueueStorefrontDigest } from '../enqueue';
 import type { SyndicationJobData, SyndicationJobName } from '../queue';
 
 /**
@@ -140,6 +140,12 @@ export async function syndicateAggregateProcessor(
       throw err;
     }
   }
+
+  // The page-level widgets read a store-wide digest, not this product's
+  // metafields, so it has to be refreshed whenever any product's reviews move.
+  // Debounced hard inside the helper — a carousel two minutes stale costs
+  // nobody anything, and an import would otherwise trigger this per review.
+  await enqueueStorefrontDigest({ storeId });
 
   logger.info(
     {

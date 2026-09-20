@@ -1,0 +1,50 @@
+{% comment %}
+  Shared setup for the page-level widgets — carousel, testimonials, counter
+  and review page.
+
+  None of them have a `product` in scope, so they read the store-wide digest
+  the worker publishes to a shop metafield. This snippet resolves that digest
+  and the shared appearance settings, so four blocks do not each carry their
+  own copy of the same twelve lines.
+
+  Sets: cited_digest, cited_reviews, cited_rating, cited_count, and the colour
+  variables as `cited_style`.
+{% endcomment %}
+
+{%- liquid
+  # `$app` resolves on the shop to `app--{app_id}`, and that is the only form
+  # Liquid exposes — `shop.metafields.app.x` returns blank. Verified against a
+  # live storefront.
+  assign cited_ns = 'app--410130251777'
+
+  assign cited_digest = shop.metafields[cited_ns].digest.value
+  if cited_digest == blank
+    assign cited_digest = shop.metafields.app.digest.value
+  endif
+
+  assign cited_reviews = cited_digest.reviews
+  assign cited_rating = cited_digest.rating | default: 0
+  assign cited_count = cited_digest.count | default: 0
+
+  assign ws = shop.metafields[cited_ns].widget_settings.value
+  if ws == blank
+    assign ws = shop.metafields.app.widget_settings.value
+  endif
+
+  assign cited_star = ws.star_color | default: '#FFB800'
+  assign cited_text = ws.text_color | default: '#1A1A1A'
+  assign cited_muted = ws.muted_color | default: '#6B7280'
+  assign cited_border = ws.border_color | default: '#E5E7EB'
+  assign cited_radius = ws.corner_radius | default: 8
+  assign cited_gap = ws.spacing | default: 16
+  assign cited_anon = ws.anonymous_label | default: 'Verified customer'
+-%}
+
+{%- capture cited_style -%}
+--cited-star: {{ cited_star }};
+--cited-text: {{ cited_text }};
+--cited-muted: {{ cited_muted }};
+--cited-border: {{ cited_border }};
+--cited-radius: {{ cited_radius }}px;
+--cited-gap: {{ cited_gap }}px;
+{%- endcapture -%}

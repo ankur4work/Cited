@@ -24,6 +24,15 @@ export interface WidgetDef {
   handle: string;
   /** App blocks are added to a template; embeds are toggled in Theme settings. */
   kind: 'block' | 'embed';
+  /**
+   * Which template the theme editor should open on.
+   *
+   * A carousel belongs on the home page and a snippet belongs beside a buy
+   * button, so sending both to `product` would drop half of these into a
+   * template they make no sense in — and a merchant who lands in the wrong
+   * editor mostly concludes the button is broken.
+   */
+  template?: 'product' | 'index' | 'page' | 'collection';
   /** What the merchant gets, in their words, for the card body. */
   points: string[];
 }
@@ -66,6 +75,54 @@ export const WIDGETS: WidgetDef[] = [
     ],
   },
   {
+    id: 'review-carousel',
+    name: 'Review Carousel',
+    description:
+      'Your best reviews in a scrollable row, for the home page or any landing page — anywhere there is no single product.',
+    handle: 'review-carousel',
+    kind: 'block',
+    template: 'index',
+    points: [
+      'Works on any page, not just products',
+      'Scrolls by touch, trackpad, keyboard and scrollbar',
+      'Each review links to the product it is about',
+    ],
+  },
+  {
+    id: 'testimonials',
+    name: 'Testimonials',
+    description:
+      'The same reviews, presented larger and quieter. A carousel sells products; a testimonial strip sells the store.',
+    handle: 'testimonials',
+    kind: 'block',
+    template: 'index',
+    points: ['Fewer, longer quotes', 'Reads rather than skims', 'No product thumbnails by default'],
+  },
+  {
+    id: 'review-counter',
+    name: 'Review Counter',
+    description:
+      'Your store’s overall rating as a compact badge — for a header, a footer, or beside a hero.',
+    handle: 'review-counter',
+    kind: 'block',
+    template: 'index',
+    points: [
+      'Averaged across reviews, not across products',
+      'One line or stacked',
+      'Tiny — it fits in a header',
+    ],
+  },
+  {
+    id: 'review-page',
+    name: 'Review Page',
+    description:
+      'A dedicated page showing reviews from across your store in a grid, for browsing rather than glancing.',
+    handle: 'review-page',
+    kind: 'block',
+    template: 'page',
+    points: ['Add to any page template', 'Reflows to the space your theme gives it', 'Store rating at the top'],
+  },
+  {
     id: 'auto-embed',
     name: 'Automatic placement',
     description:
@@ -99,5 +156,6 @@ export function themeEditorUrl(shopDomain: string, widget: WidgetDef): string {
     return `${base}?context=apps&activateAppId=${encodeURIComponent(target)}`;
   }
 
-  return `${base}?template=product&addAppBlockId=${encodeURIComponent(target)}&target=mainSection`;
+  const template = widget.template ?? 'product';
+  return `${base}?template=${template}&addAppBlockId=${encodeURIComponent(target)}&target=mainSection`;
 }

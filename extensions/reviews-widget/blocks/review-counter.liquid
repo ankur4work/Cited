@@ -1,0 +1,57 @@
+{% comment %}
+  Cited — the store's overall rating, as a compact badge.
+
+  For a header, a footer, or beside a hero: "4.8 ★★★★★ based on 120 reviews".
+  Store-wide, from the shop digest, so it renders on any page.
+
+  The average is computed across REVIEWS, not by averaging each product's
+  average — otherwise a product with one 5-star review would weigh as heavily
+  as one with four hundred.
+{% endcomment %}
+
+{%- render 'cited-digest' -%}
+
+{%- if cited_count > 0 -%}
+  {{ 'cited-reviews.css' | asset_url | stylesheet_tag }}
+
+  <div class="cited-counter cited-counter--{{ block.settings.layout }}" style="{{ cited_style }}" {{ block.shopify_attributes }}>
+    <span class="cited-counter__value">{{ cited_rating }}</span>
+    {%- render 'cited-stars', rating: cited_rating, scale_max: 5, size: 16 -%}
+    <span class="cited-counter__label">
+      {%- if block.settings.label != blank -%}
+        {{ block.settings.label | escape }}
+      {%- else -%}
+        Based on {{ cited_count }} review{% unless cited_count == 1 %}s{% endunless %}
+      {%- endif -%}
+    </span>
+  </div>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Cited Review Counter",
+  "target": "section",
+  "settings": [
+    {
+      "type": "select",
+      "id": "layout",
+      "label": "Layout",
+      "options": [
+        { "value": "row", "label": "One line" },
+        { "value": "stack", "label": "Stacked" }
+      ],
+      "default": "row"
+    },
+    {
+      "type": "text",
+      "id": "label",
+      "label": "Label",
+      "info": "Leave empty to show “Based on N reviews”."
+    },
+    {
+      "type": "paragraph",
+      "content": "Colours are set in the Cited app under Widgets → Customize."
+    }
+  ]
+}
+{% endschema %}

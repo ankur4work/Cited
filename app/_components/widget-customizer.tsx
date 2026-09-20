@@ -7,6 +7,8 @@ import {
   Card,
   InlineGrid,
   InlineStack,
+  Collapsible,
+  Divider,
   Modal,
   RangeSlider,
   Text,
@@ -70,6 +72,79 @@ function ColorField({
   );
 }
 
+
+/**
+ * One collapsible group.
+ *
+ * The customiser covers colours, shape, copy and selection rules; flat, that is
+ * a wall of twenty controls and a merchant changing a button label scrolls past
+ * everything else to reach it. Only one section is open at a time, so the list
+ * of headings stays visible as a map of what can be changed.
+ */
+function Section({
+  title,
+  summary,
+  open,
+  onToggle,
+  children,
+}: {
+  title: string;
+  summary: string;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <BlockStack gap="200">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        style={{
+          display: 'flex',
+          width: '100%',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          padding: '12px 0',
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          textAlign: 'left',
+        }}
+      >
+        <span>
+          <Text as="span" variant="headingSm">
+            {title}
+          </Text>
+          <br />
+          <Text as="span" variant="bodySm" tone="subdued">
+            {summary}
+          </Text>
+        </span>
+        <span
+          aria-hidden="true"
+          style={{
+            display: 'inline-block',
+            width: 8,
+            height: 8,
+            borderRight: '2px solid currentColor',
+            borderBottom: '2px solid currentColor',
+            transform: open ? 'rotate(-135deg)' : 'rotate(-45deg)',
+            transition: 'transform 120ms ease',
+            flex: 'none',
+          }}
+        />
+      </button>
+      <Collapsible open={open} id={`cited-section-${title}`} transition={false}>
+        <BlockStack gap="300">{children}</BlockStack>
+        <div style={{ height: 12 }} />
+      </Collapsible>
+      <Divider />
+    </BlockStack>
+  );
+}
+
 /** A live preview, built from the same values the storefront will use. */
 function Preview({ s }: { s: WidgetSettings }) {
   const star = (filled: boolean) => (
@@ -122,6 +197,9 @@ export function WidgetCustomizer({ initial }: { initial: WidgetSettings }) {
   const [open, setOpen] = useState(false);
   const [s, setS] = useState<WidgetSettings>(initial);
   const [saving, setSaving] = useState(false);
+  // One at a time. Every section open at once is the flat wall this replaced.
+  const [section, setSection] = useState<string | null>('colors');
+  const toggle = (id: string) => setSection((cur) => (cur === id ? null : id));
 
   const set = useCallback(
     <K extends keyof WidgetSettings>(key: K, value: WidgetSettings[K]) =>
@@ -187,10 +265,12 @@ export function WidgetCustomizer({ initial }: { initial: WidgetSettings }) {
               </BlockStack>
             </Card>
 
-            <BlockStack gap="300">
-              <Text as="h3" variant="headingSm">
-                Colours
-              </Text>
+            <Section
+              title="Color schemes"
+              summary="Stars, text and borders across every widget"
+              open={section === 'colors'}
+              onToggle={() => toggle('colors')}
+            >
               <InlineGrid columns={{ xs: 1, sm: 2 }} gap="300">
                 <ColorField label="Stars" value={s.starColor} onChange={(v) => set('starColor', v)} />
                 <ColorField label="Text" value={s.textColor} onChange={(v) => set('textColor', v)} />
@@ -205,12 +285,14 @@ export function WidgetCustomizer({ initial }: { initial: WidgetSettings }) {
                   onChange={(v) => set('borderColor', v)}
                 />
               </InlineGrid>
-            </BlockStack>
+            </Section>
 
-            <BlockStack gap="300">
-              <Text as="h3" variant="headingSm">
-                Shape
-              </Text>
+            <Section
+              title="Review item layout"
+              summary="Corner radius and spacing"
+              open={section === 'layout'}
+              onToggle={() => toggle('layout')}
+            >
               <RangeSlider
                 label="Corner radius"
                 value={s.cornerRadius}
@@ -229,6 +311,14 @@ export function WidgetCustomizer({ initial }: { initial: WidgetSettings }) {
                 suffix={`${s.spacing}px`}
                 onChange={(v) => set('spacing', Number(v))}
               />
+            </Section>
+
+            <Section
+              title="Review selection rules"
+              summary="How many quotes the snippet shows"
+              open={section === 'selection'}
+              onToggle={() => toggle('selection')}
+            >
               <RangeSlider
                 label="Quotes in the Review Snippet"
                 value={s.snippetQuotes}
@@ -238,12 +328,19 @@ export function WidgetCustomizer({ initial }: { initial: WidgetSettings }) {
                 suffix={`${s.snippetQuotes}`}
                 onChange={(v) => set('snippetQuotes', Number(v))}
               />
-            </BlockStack>
-
-            <BlockStack gap="300">
-              <Text as="h3" variant="headingSm">
-                Text
+              <Text as="p" variant="bodySm" tone="subdued">
+                Carousel and testimonial widgets show reviews rated 4 or better that actually have
+                text, most helpful first. Their count is set on the block itself, since one store
+                can run several.
               </Text>
+            </Section>
+
+            <Section
+              title="Title"
+              summary="Headings shown above your reviews"
+              open={section === 'title'}
+              onToggle={() => toggle('title')}
+            >
               <TextField
                 label="Heading"
                 value={s.heading}
@@ -251,6 +348,21 @@ export function WidgetCustomizer({ initial }: { initial: WidgetSettings }) {
                 maxLength={120}
                 onChange={(v) => set('heading', v)}
               />
+              <TextField
+                label="Write-a-review heading"
+                value={s.formHeading}
+                autoComplete="off"
+                maxLength={120}
+                onChange={(v) => set('formHeading', v)}
+              />
+            </Section>
+
+            <Section
+              title="Card content"
+              summary="Wording inside each review"
+              open={section === 'content'}
+              onToggle={() => toggle('content')}
+            >
               <TextField
                 label="Shown when a product has no reviews"
                 value={s.emptyText}
@@ -266,20 +378,13 @@ export function WidgetCustomizer({ initial }: { initial: WidgetSettings }) {
                 onChange={(v) => set('anonymousLabel', v)}
               />
               <TextField
-                label="Write-a-review heading"
-                value={s.formHeading}
-                autoComplete="off"
-                maxLength={120}
-                onChange={(v) => set('formHeading', v)}
-              />
-              <TextField
                 label="Submit button"
                 value={s.formButton}
                 autoComplete="off"
                 maxLength={40}
                 onChange={(v) => set('formButton', v)}
               />
-            </BlockStack>
+            </Section>
           </BlockStack>
         </Modal.Section>
       </Modal>

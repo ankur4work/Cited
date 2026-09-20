@@ -283,6 +283,45 @@ export async function enqueueSyndicationBackfill(input: {
 }
 
 /**
+ * Refresh the store-wide review data the page-level widgets read.
+ *
+ * Heavily debounced and coalesced per store. This recomputes an aggregate over
+ * every published review and rewrites one shop metafield, so running it once
+ * per review during an import would be pure waste — the carousel being two
+ * minutes stale costs nobody anything.
+ */
+export async function enqueueStorefrontDigest(input: {
+  storeId: string;
+  delayMs?: number;
+}): Promise<void> {
+  const jobId = jobKey('storefront-digest', input.storeId);
+
+  // Same reason as the syndication helpers: a completed job is retained for
+  // days and would otherwise swallow every later refresh, leaving the widgets
+  // frozen on whatever the first run published.
+  const existing = await maintenanceQueue.getJob(jobId);
+  if (existing) {
+    const state = await existing.getState();
+    if (state === 'completed' || state === 'failed') {
+      await existing
+        .remove()
+        .catch((err: unknown) =>
+          logger.warn(
+            { jobId, err: (err as Error).message },
+            'Could not clear finished digest job before re-enqueue',
+          ),
+        );
+    }
+  }
+
+  await maintenanceQueue.add(
+    'storefront:digest',
+    { storeId: input.storeId },
+    { jobId, delay: input.delayMs ?? 120_000 },
+  );
+}
+
+/**
  * Reconcile one metaobject against our copy of the review, in response to a
  * `metaobjects/*` webhook.
  *

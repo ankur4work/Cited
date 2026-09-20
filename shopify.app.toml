@@ -192,6 +192,15 @@ type = "json"
 name = "Cited widget settings"
 access.storefront = "public_read"
 
+# Store-wide review data for the widgets that render where there is no
+# product — a home-page carousel, a footer testimonial strip, a header
+# counter. Denormalised so those blocks cost no request and no metaobject
+# resolution.
+[shop.metafields.app.digest]
+type = "json"
+name = "Cited store review digest"
+access.storefront = "public_read"
+
 [pos]
 embedded = false
 

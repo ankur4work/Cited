@@ -1,0 +1,59 @@
+{% comment %}
+  One review, as a card. Shared by the carousel, testimonials and review page,
+  so a change to how a review reads happens once.
+
+  Params:
+    r             — an entry from the shop digest
+    scale_max     — integer, usually 5
+    anon          — name to show when the reviewer gave none
+    show_product  — whether to name the product this review is about
+{% endcomment %}
+
+{%- liquid
+  assign q_author = r.author | default: anon
+  assign q_max = scale_max | default: 5 | floor
+-%}
+
+<figure class="cited-card">
+  <div class="cited-card__head">
+    {%- render 'cited-stars', rating: r.rating, scale_max: q_max, size: 14 -%}
+    {%- if r.verified -%}
+      <span class="cited-card__verified">Verified purchase</span>
+    {%- endif -%}
+  </div>
+
+  {%- if r.title != blank -%}
+    <h3 class="cited-card__title">{{ r.title | escape }}</h3>
+  {%- endif -%}
+
+  <blockquote class="cited-card__quote">{{ r.body | escape }}</blockquote>
+
+  <figcaption class="cited-card__foot">
+    <span class="cited-card__author">{{ q_author | escape }}</span>
+    {%- if r.date != blank -%}
+      <time class="cited-card__date" datetime="{{ r.date }}">{{ r.date | date: format: 'date' }}</time>
+    {%- endif -%}
+  </figcaption>
+
+  {%- comment -%}
+    The product this review is about. Linked, because on a home page or a
+    footer the whole point of a testimonial is to send someone to the thing
+    being praised.
+  {%- endcomment -%}
+  {%- if show_product and r.handle != blank -%}
+    <a class="cited-card__product" href="{{ routes.all_products_collection_url }}/{{ r.handle }}">
+      {%- if r.image != blank -%}
+        <img
+          class="cited-card__thumb"
+          src="{{ r.image }}"
+          alt=""
+          loading="lazy"
+          decoding="async"
+          width="36"
+          height="36"
+        >
+      {%- endif -%}
+      <span>{{ r.product | escape }}</span>
+    </a>
+  {%- endif -%}
+</figure>

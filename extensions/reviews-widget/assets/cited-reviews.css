@@ -298,6 +298,210 @@
  * open, so it carries no caret and must not look clickable-but-inert. */
 .cited-rating--static .cited-rating__trigger { text-decoration: none; color: inherit; }
 
+/* ── Page-level widgets: carousel, testimonials, counter, review page ──
+ *
+ * These render outside a product page, in whatever container a theme gives
+ * them, so nothing here sets a width. They fill their parent and lay out from
+ * available space rather than from a breakpoint — a block placed in a narrow
+ * sidebar behaves the same as one in a full-width section, which a viewport
+ * media query cannot achieve.
+ */
+.cited-strip,
+.cited-page {
+  --cited-star: #ffb800;
+  --cited-text: #1a1a1a;
+  --cited-muted: #6b7280;
+  --cited-border: #e5e7eb;
+  --cited-radius: 8px;
+  --cited-gap: 16px;
+  --cited-surface: color-mix(in srgb, currentColor 4%, transparent);
+  --cited-hairline: color-mix(in srgb, currentColor 12%, transparent);
+  color: var(--cited-text);
+  margin-block: calc(var(--cited-gap) * 1.5);
+  overflow-wrap: break-word;
+}
+
+@supports not (color: color-mix(in srgb, red 50%, transparent)) {
+  .cited-strip,
+  .cited-page {
+    --cited-surface: rgba(0, 0, 0, 0.03);
+    --cited-hairline: var(--cited-border);
+  }
+}
+
+.cited-strip__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: calc(var(--cited-gap) * 0.75);
+}
+
+.cited-strip__heading { margin: 0; font-size: 1.125rem; font-weight: 600; line-height: 1.3; }
+
+.cited-strip__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--cited-muted);
+}
+
+/*
+ * The carousel. `overflow-x: auto` plus scroll-snap, and nothing else —
+ * a trackpad, a touchscreen, arrow keys, a scrollbar and a screen reader all
+ * work without any of it being implemented by hand, and there is no library to
+ * load or break.
+ */
+.cited-strip__track {
+  display: flex;
+  gap: var(--cited-gap);
+  margin: 0;
+  padding: 0 0 8px;
+  list-style: none;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: thin;
+  /* Stops a snapped card from sitting flush against the container edge. */
+  scroll-padding-inline: 2px;
+}
+
+.cited-strip__item {
+  flex: 0 0 min(19rem, 82%);
+  scroll-snap-align: start;
+}
+
+/* ── One review, as a card ── */
+.cited-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  margin: 0;
+  padding: calc(var(--cited-gap) * 0.875);
+  border: 1px solid var(--cited-hairline);
+  border-radius: var(--cited-radius);
+  background: var(--cited-surface);
+  box-sizing: border-box;
+}
+
+.cited-card__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.cited-card__verified { font-size: 0.6875rem; font-weight: 600; color: #0a7c42; }
+
+.cited-card__title {
+  margin: 8px 0 0;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.cited-card__quote {
+  margin: 6px 0 0;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  /* The digest truncates to 240 characters, but a long word or a narrow
+   * column can still overflow; this keeps every card the same shape. */
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.cited-card__foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  font-size: 0.75rem;
+  color: var(--cited-muted);
+}
+
+.cited-card__author { font-weight: 600; color: var(--cited-text); }
+
+.cited-card__product {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* `margin-top: auto` pins this to the bottom so a row of cards of different
+   * text lengths still lines its product links up. */
+  margin-top: auto;
+  padding-top: 10px;
+  font-size: 0.75rem;
+  color: var(--cited-muted);
+  text-decoration: none;
+}
+
+.cited-card__product:hover { text-decoration: underline; }
+
+.cited-card__thumb {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex: none;
+}
+
+/*
+ * Testimonials: the same mechanism, more room. Wider cards and a larger quote,
+ * because this variant is read rather than skimmed.
+ */
+.cited-strip--testimonial .cited-strip__item { flex-basis: min(24rem, 88%); }
+.cited-strip--testimonial .cited-card__quote {
+  font-size: 1rem;
+  line-height: 1.6;
+  -webkit-line-clamp: 7;
+}
+
+/* ── Review counter ── */
+.cited-counter {
+  --cited-star: #ffb800;
+  --cited-text: #1a1a1a;
+  --cited-muted: #6b7280;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--cited-text);
+}
+
+.cited-counter--stack { flex-direction: column; gap: 4px; text-align: center; }
+
+.cited-counter__value { font-size: 1.25rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cited-counter__label { font-size: 0.8125rem; color: var(--cited-muted); }
+
+/* ── Review page ── */
+.cited-page__heading { margin: 0 0 12px; font-size: 1.25rem; font-weight: 600; }
+
+.cited-page__summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-bottom: var(--cited-gap);
+  margin-bottom: var(--cited-gap);
+  border-bottom: 1px solid var(--cited-hairline);
+}
+
+.cited-page__score { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cited-page__count { font-size: 0.875rem; color: var(--cited-muted); }
+.cited-page__empty { color: var(--cited-muted); font-size: 0.875rem; }
+
+/*
+ * `auto-fill` with a minimum, not fixed columns: the grid reflows from the
+ * space the theme actually gives it, so the same block works in a narrow
+ * template and a full-width one with no breakpoint to maintain.
+ */
+.cited-page__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(17rem, 100%), 1fr));
+  gap: var(--cited-gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 .cited-reviews__empty {
   padding: calc(var(--cited-gap) * 1.5);
   color: var(--cited-muted);
