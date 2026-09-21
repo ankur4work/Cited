@@ -4,9 +4,10 @@ import {
   BlockStack,
   Badge,
   Banner,
+  Box,
   Button,
   Card,
-  Grid,
+  InlineGrid,
   InlineStack,
   Layout,
   List,
@@ -71,10 +72,24 @@ export function WidgetsView({
               Place them yourself
             </Text>
 
-            <Grid>
+            {/*
+              InlineGrid, not Grid: CSS grid stretches every item in a row to
+              the tallest, which is what makes the cards match. Polaris Card
+              cannot be told to fill that height — it takes no style or
+              className — so each card is a Box, which accepts minHeight, with
+              a flex column inside doing the aligning.
+            */}
+            <InlineGrid columns={{ xs: 1, sm: 2, md: 3 }} gap="400">
               {blocks.map((w) => (
-                <Grid.Cell key={w.id} columnSpan={{ xs: 6, sm: 6, md: 2, lg: 4, xl: 4 }}>
-                  <Card>
+                <Box
+                  key={w.id}
+                  background="bg-surface"
+                  borderRadius="300"
+                  padding="400"
+                  shadow="100"
+                  minHeight="100%"
+                >
+                  <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                     <BlockStack gap="300">
                       {/*
                         Above the name, not below the prose. The picture is
@@ -90,9 +105,23 @@ export function WidgetsView({
                         <Badge tone="success">No JavaScript</Badge>
                       </InlineStack>
 
-                      <Text as="p" variant="bodySm" tone="subdued">
-                        {w.description}
-                      </Text>
+                      {/*
+                        Clamped to three lines. One long description would
+                        otherwise set the height of every card in its row,
+                        and these are meant to be scanned, not read.
+                      */}
+                      <div
+                        style={{
+                          display: '-webkit-box',
+                          WebkitLineClamp: 3,
+                          WebkitBoxOrient: 'vertical',
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <Text as="p" variant="bodySm" tone="subdued">
+                          {w.description}
+                        </Text>
+                      </div>
 
                       <List type="bullet">
                         {w.points.map((p) => (
@@ -103,14 +132,20 @@ export function WidgetsView({
                           </List.Item>
                         ))}
                       </List>
+                    </BlockStack>
 
-                      {/*
-                        Only "Add widget" leaves the app. Placement is
-                        genuinely theme-editor work — it is the merchant
-                        choosing a spot in their own layout — whereas
-                        appearance is ours, and lives in the customiser above
-                        so one setting covers every widget at once.
-                      */}
+                    {/*
+                      marginTop:auto is what lines the buttons up. The lists
+                      above differ in length — three bullets here, four there
+                      — so without it every card's actions sit at a different
+                      height and the grid reads as broken.
+
+                      Only "Add widget" leaves the app. Placement is genuinely
+                      theme-editor work — the merchant choosing a spot in their
+                      own layout — whereas appearance is ours, and lives in the
+                      customiser so one setting covers every widget at once.
+                    */}
+                    <div style={{ marginTop: 'auto', paddingTop: 16 }}>
                       <InlineStack gap="200">
                         <Button variant="primary" url={w.addUrl} target="_blank">
                           Add widget
@@ -123,11 +158,11 @@ export function WidgetsView({
                         */}
                         <WidgetCustomizer initial={settings} widgetId={w.id} />
                       </InlineStack>
-                    </BlockStack>
-                  </Card>
-                </Grid.Cell>
+                    </div>
+                  </div>
+                </Box>
               ))}
-            </Grid>
+            </InlineGrid>
           </BlockStack>
         </Layout.Section>
 
