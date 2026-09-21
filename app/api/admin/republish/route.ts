@@ -3,7 +3,11 @@ import { timingSafeEqual } from 'node:crypto';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import { env } from '@/lib/env';
-import { enqueueAggregateSync, enqueueStorefrontDigest } from '@/jobs/enqueue';
+import {
+  enqueueAggregateSync,
+  enqueueReviewSyndication,
+  enqueueStorefrontDigest,
+} from '@/jobs/enqueue';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -66,8 +70,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'shop required' }, { status: 400 });
   }
 
-  // `digest` rewrites one shop metafield; `all` re-runs every product's
-  // aggregate, which rewrites the per-product lists AND triggers the digest.
+  // `digest` rewrites one shop metafield. `all` re-projects every review
+  // metaobject, re-runs every product's aggregate, and rewrites the digest —
+  // the three separate surfaces a projection change has to reach.
   const scope = body.scope === 'all' ? 'all' : 'digest';
 
   const store = await prisma.store.findUnique({
@@ -97,6 +102,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, scope, queued: { digest: 1 } });
   }
 
+  // Every review, not only the products. An aggregate rewrites the rating and
+  // the product→reviews LIST; the review metaobject — which is what actually
+  // carries the title, body and author onto the page — is only rewritten by
+  // review syndication. A change to what `reviewMetaobjectInput` projects
+  // (the author scrub, say) therefore reaches nothing at all without this,
+  // and `syndicate:backfill` is no help: it skips anything already SYNCED.
+  const reviews = await prisma.review.findMany({
+    where: { storeId: store.id, metaobjectGid: { not: null } },
+    select: { id: true },
+  });
+
+  for (const r of reviews) {
+    // repairKey, so a completed job under the shared coalescing id cannot
+    // swallow this — BullMQ retains finished jobs for days.
+    await enqueueReviewSyndication({ storeId: store.id, reviewId: r.id, repairKey: 'republish' });
+  }
+
   const products = await prisma.product.findMany({
     where: {
       storeId: store.id,
@@ -113,10 +135,13 @@ export async function POST(req: NextRequest) {
   // published reviews but no syndicated product still wants its digest.
   await enqueueStorefrontDigest({ storeId: store.id, delayMs: 0 });
 
-  logger.info({ shopDomain, scope, products: products.length }, 'Republish requested');
+  logger.info(
+    { shopDomain, scope, reviews: reviews.length, products: products.length },
+    'Republish requested',
+  );
   return NextResponse.json({
     ok: true,
     scope,
-    queued: { aggregates: products.length, digest: 1 },
+    queued: { reviews: reviews.length, aggregates: products.length, digest: 1 },
   });
 }
