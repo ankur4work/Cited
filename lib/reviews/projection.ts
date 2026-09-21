@@ -1,6 +1,7 @@
 import type { ReviewStatus, VerificationStatus } from '@prisma/client';
 import type { AppVerificationStatus, ReviewMetaobjectInput } from '@/lib/shopify/metaobjects';
 import { reviewMetaobjectHandle } from '@/lib/shopify/metaobject-payload';
+import { publicAuthorName } from './author-name';
 
 /**
  * The single definition of what a review looks like as a Shopify metaobject.
@@ -126,7 +127,10 @@ export function reviewMetaobjectInput(review: ProjectableReview): ReviewMetaobje
     source: review.sourceLabel,
     title: review.title,
     body: review.body,
-    author: review.authorName,
+    // Never the raw stored value: a signed-in shopper with no name on their
+    // Shopify account carries their email address here, and this metaobject
+    // is rendered on the product page.
+    author: publicAuthorName(review.authorName),
     orderGid: review.orderShopifyGid,
     variantGid: review.variantShopifyGid,
     merchantReply: review.merchantReply,

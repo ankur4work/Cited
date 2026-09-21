@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { openai, estimateCostCents, AiConfigError } from './client';
+import { publicAuthorName } from '@/lib/reviews/author-name';
 
 // Re-exported so callers and tests keep one import site for cost accounting.
 export { estimateCostCents };
@@ -256,7 +257,9 @@ export async function summarizeProductReviews(input: {
       themes: supported.themes,
       highlights: verified.map((h) => ({
         quote: h.quote,
-        author: reviews[h.index]!.authorName,
+        // The summary is published to a public metafield, so the same rule
+        // applies here as to the review projection itself.
+        author: publicAuthorName(reviews[h.index]!.authorName),
         rating: reviews[h.index]!.rating,
       })),
     },

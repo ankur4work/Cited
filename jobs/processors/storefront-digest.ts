@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import { ShopifyClient } from '@/lib/shopify/client';
 import { setStorefrontDigest } from '@/lib/shopify/shop-metafields';
+import { publicAuthorName } from '@/lib/reviews/author-name';
 import type { MaintenanceJobData } from '../queue';
 
 /**
@@ -92,9 +93,9 @@ export async function storefrontDigestProcessor(
       // page that renders the widget, and shipping full review bodies in the
       // HTML of a home page is a real weight for text nobody will read.
       body: (r.body ?? '').slice(0, MAX_QUOTE),
-      // Never the email. Shopify's displayName falls back to the address for a
-      // customer with no name, and this field is published on a public page.
-      author: r.authorName && !r.authorName.includes('@') ? r.authorName : '',
+      // Never the email — see publicAuthorName. Shared with the other
+      // publication paths so one rule governs every public surface.
+      author: publicAuthorName(r.authorName) ?? '',
       date: r.publishedAt ? r.publishedAt.toISOString().slice(0, 10) : '',
       verified: r.verification === 'VERIFIED_BUYER',
       product: r.product?.title ?? '',

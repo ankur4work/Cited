@@ -6,6 +6,7 @@ import { logger } from '@/lib/logger';
 import { checkAiEntitlement } from '@/lib/entitlements';
 import { ShopifyClient } from '@/lib/shopify/client';
 import { setProductSummaryMetafield, MetaobjectError } from '@/lib/shopify/metaobjects';
+import { publicAuthorName } from '@/lib/reviews/author-name';
 import {
   summarizeProductReviews,
   SummarizeError,
@@ -122,7 +123,10 @@ export async function summarizeProductProcessor(
         rating: r.rating,
         title: r.title,
         body: r.body,
-        authorName: r.authorName,
+        // Scrubbed on the way in as well as on the way out: the model is a
+        // third party, and it has no use for an author name it is only asked
+        // to echo back.
+        authorName: publicAuthorName(r.authorName),
       })),
     });
   } catch (err) {

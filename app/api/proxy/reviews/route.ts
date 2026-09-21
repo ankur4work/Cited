@@ -9,6 +9,7 @@ import {
   DuplicateReviewError,
   ReviewValidationError,
 } from '@/lib/reviews/create';
+import { publicAuthorName } from '@/lib/reviews/author-name';
 import {
   uploadReviewImage,
   uploadReviewVideo,
@@ -388,8 +389,13 @@ export async function POST(req: NextRequest) {
       // Shopify's answer wins over anything posted here. A signed-in shopper
       // is not asked for their name or address at all, so this is also the
       // only place those values can come from.
+      //
+      // Except when Shopify's answer IS the address: displayName falls back to
+      // the email for a customer with no name set, and taking it verbatim is
+      // how an address came to be stored as an author and published. Fall back
+      // to whatever was posted, then to anonymous.
       email = known.email;
-      name = known.name ?? name;
+      name = publicAuthorName(known.name) ?? name;
       emailIsTrusted = true;
     }
   }
@@ -470,7 +476,7 @@ export async function POST(req: NextRequest) {
       : {
           rating: review.rating,
           body: review.body,
-          author: review.authorName || null,
+          author: publicAuthorName(review.authorName),
           submittedAt: review.submittedAt.toISOString(),
           verified: review.verification === 'VERIFIED_BUYER',
           photos: photoUrls,
