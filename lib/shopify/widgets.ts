@@ -8,13 +8,30 @@
  */
 
 /**
- * The theme app extension's uid, from extensions/reviews-widget/shopify.extension.toml.
+ * The theme app extension's registration uuid, for theme-editor deep links.
  *
- * Shopify's theme-editor deep links address a block as `{uuid}/{handle}`, and
- * the uuid is the EXTENSION's, not the app's. It changes only if the extension
- * is recreated, which would also change every block handle beneath it.
+ * Shopify addresses a block as `{uuid}/{handle}`, and there are THREE ids in
+ * this project that look like they might be it. Two are not:
+ *
+ *   - `uid` in extensions/reviews-widget/shopify.extension.toml —
+ *     `6cea37c8…a85d53f9`, 44 characters, not a uuid at all. It is the CLI's
+ *     local handle for the directory. This is what shipped in 22b4d64, so
+ *     every "Add widget" button since has produced "«reviews» not added.
+ *     There is a problem with the app block."
+ *   - the id in the CDN asset path, `cdn.shopify.com/extensions/{id}/…`.
+ *     Tempting, because it is right there in any storefront's HTML — but it
+ *     is scoped to the VERSION. Releasing cited-reviews-34 changed it from
+ *     `01a0c045-…` to `01a0c42b-…`, so pinning it would break the links again
+ *     on the next deploy.
+ *
+ * The one below is the `uuid` the CLI writes into
+ * .shopify/deploy-bundle/manifest.json, which stayed put across that same
+ * release. Stable across versions, changes only if the extension is
+ * re-registered.
+ *
+ * Verified by releasing a version and re-reading both — not by inspection.
  */
-export const THEME_EXTENSION_UID = '6cea37c8-6927-f5f3-2a46-b9a5792e946fa85d53f9';
+export const THEME_EXTENSION_UID = '01a00e9f-bb02-7b1f-b1ef-c8e7b7934b2b';
 
 export interface WidgetDef {
   id: string;

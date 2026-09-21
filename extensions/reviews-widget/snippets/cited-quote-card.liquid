@@ -31,7 +31,12 @@
   <figcaption class="cited-card__foot">
     <span class="cited-card__author">{{ q_author | escape }}</span>
     {%- if r.date != blank -%}
-      <time class="cited-card__date" datetime="{{ r.date }}">{{ r.date | date: format: 'date' }}</time>
+      {%- comment -%}
+        Explicit strftime — `format: 'date'` resolves against the theme's own
+        locale file and silently prints the raw value on any theme that does
+        not define it.
+      {%- endcomment -%}
+      <time class="cited-card__date" datetime="{{ r.date }}">{{ r.date | date: '%d %B %Y' }}</time>
     {%- endif -%}
   </figcaption>
 

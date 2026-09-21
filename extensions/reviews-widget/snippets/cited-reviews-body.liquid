@@ -389,7 +389,14 @@
           <div class="cited-review__meta">
             {%- if review.submitted_at != blank -%}
               <time class="cited-review__date" datetime="{{ review.submitted_at | date: '%Y-%m-%d' }}">
-                Reviewed on {{ review.submitted_at | date: format: 'date' }}
+                {%- comment -%}
+                  An explicit strftime, not `format: 'date'`. The named
+                  formats are read from the THEME's locale file, and a theme
+                  that does not define `date_formats.date` — most do not —
+                  makes the filter a no-op that prints the raw stored value.
+                  Shoppers were being shown "2026-08-19T20:55:28Z".
+                {%- endcomment -%}
+                Reviewed on {{ review.submitted_at | date: '%d %B %Y' }}
               </time>
             {%- endif -%}
             {%- comment -%}
