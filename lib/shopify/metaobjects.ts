@@ -154,6 +154,15 @@ export function buildReviewFields(
   return buildFields(input);
 }
 
+/**
+ * Keys that must be written even when empty.
+ *
+ * `author_display_name` can go from a value to nothing on purpose — a name
+ * that turns out to be an email address is refused by publicAuthorName — and
+ * a field that is only ever written when non-empty can never be unpublished.
+ */
+const ALWAYS_SENT = new Set(['author_display_name']);
+
 function buildFields(input: ReviewMetaobjectInput): Array<{ key: string; value: string }> {
   const scaleMin = input.scaleMin ?? 1;
   const scaleMax = input.scaleMax ?? 5;
@@ -168,7 +177,8 @@ function buildFields(input: ReviewMetaobjectInput): Array<{ key: string; value: 
 
   // Optional fields are omitted entirely when empty rather than sent blank.
   // A present-but-empty value overwrites whatever is already stored, which
-  // silently erases data on a partial update.
+  // silently erases data on a partial update. ALWAYS_SENT is the exception —
+  // see the loop below.
   // `author` is a customer_reference in the standard product_review
   // definition, not a name. Writing "Priya S" into it fails the whole upsert
   // with "Value must be a valid customer reference", which took every review
@@ -187,6 +197,16 @@ function buildFields(input: ReviewMetaobjectInput): Array<{ key: string; value: 
   ];
   for (const [key, value] of optional) {
     if (value != null && value !== '') fields.push({ key, value });
+    // Empty here is a FACT about the review, not a gap in what we know, so it
+    // has to be sent to clear what Shopify already holds. Omitting it is how
+    // the author scrub silently failed: publicAuthorName returned null for an
+    // address, the key was dropped from the upsert, and the address stayed
+    // published while the job logged success.
+    //
+    // Safe because every caller builds this through reviewMetaobjectInput,
+    // which projects the whole review from its database row — there is no
+    // partial-update path for the rule above to protect.
+    else if (ALWAYS_SENT.has(key)) fields.push({ key, value: '' });
   }
 
   if (input.mediaUrls?.length) {

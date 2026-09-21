@@ -72,4 +72,34 @@ describe('author fields', () => {
     const list = fields({ author: 'Priya S', authorCustomerGid: 'gid://shopify/Customer/9' });
     expect(valueOf('author', list)).toBe('gid://shopify/Customer/9');
   });
+
+  it('sends author_display_name empty rather than omitting it', () => {
+    // The scrub turns an email-shaped name into null. Omitting the key leaves
+    // whatever Shopify already stores — which is how an address stayed
+    // published on a product page while the republish logged success.
+    const list = fields({ author: null });
+    expect(valueOf('author_display_name', list)).toBe('');
+  });
+
+  it('does not report drift for a name cleared on both sides', () => {
+    // Cleared-and-absent are the same state. If they were not, reconcile would
+    // rewrite this metaobject forever.
+    const list = fields({ author: null });
+    expect(driftedFieldKeys(list, {
+      rating: JSON.stringify({ scale_min: '1.0', scale_max: '5.0', value: '4.0' }),
+      submitted_at: '2026-08-19T22:01:04Z',
+      source: 'cited',
+      product: 'gid://shopify/Product/1',
+      app_verification_status: 'unverified',
+    })).toEqual([]);
+  });
+
+  it('still reports drift when Shopify holds a name we no longer publish', () => {
+    // The case that must NOT be silenced: our copy says anonymous, Shopify's
+    // says cryptokingsss1@gmail.com. That is the repair this exists for.
+    const list = fields({ author: null });
+    expect(
+      driftedFieldKeys(list, { author_display_name: 'cryptokingsss1@gmail.com' }),
+    ).toContain('author_display_name');
+  });
 });

@@ -144,6 +144,11 @@ export function driftedFieldKeys(
   const drifted: string[] = [];
   for (const { key, value } of expected) {
     const current = actual[key];
+    // A field we send empty and a field Shopify does not return are the same
+    // state: nothing is stored. Treating them as different would make every
+    // cleared field drift forever — rewrite, webhook, drift again — which is
+    // the loop the date_time truncation already taught us to avoid.
+    if (value === '' && (current === undefined || current === '')) continue;
     if (current === undefined || current !== value) drifted.push(key);
   }
   return drifted;
