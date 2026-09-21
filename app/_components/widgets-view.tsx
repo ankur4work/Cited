@@ -16,6 +16,7 @@ import {
 import type { WidgetDef } from '@/lib/shopify/widgets';
 import type { WidgetSettings } from '@/lib/widgets/settings';
 import { WidgetCustomizer } from './widget-customizer';
+import { WidgetPreview } from './widget-preview';
 
 export interface WidgetCard extends WidgetDef {
   addUrl: string;
@@ -75,6 +76,13 @@ export function WidgetsView({
                 <Grid.Cell key={w.id} columnSpan={{ xs: 6, sm: 6, md: 2, lg: 4, xl: 4 }}>
                   <Card>
                     <BlockStack gap="300">
+                      {/*
+                        Above the name, not below the prose. The picture is
+                        what a merchant scans a grid of seven widgets by; the
+                        description is what they read once one has caught them.
+                      */}
+                      <WidgetPreview id={w.id} s={settings} />
+
                       <InlineStack gap="200" blockAlign="center">
                         <Text as="h3" variant="headingSm">
                           {w.name}
@@ -107,7 +115,13 @@ export function WidgetsView({
                         <Button variant="primary" url={w.addUrl} target="_blank">
                           Add widget
                         </Button>
-                        <WidgetCustomizer initial={settings} />
+                        {/*
+                          Opens on THIS widget's shape. The settings are
+                          global, but a merchant who clicked Customize under
+                          the carousel and was shown a product review list
+                          would reasonably think the control did nothing.
+                        */}
+                        <WidgetCustomizer initial={settings} widgetId={w.id} />
                       </InlineStack>
                     </BlockStack>
                   </Card>

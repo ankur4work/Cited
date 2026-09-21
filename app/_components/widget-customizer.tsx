@@ -11,11 +11,14 @@ import {
   Divider,
   Modal,
   RangeSlider,
+  Select,
   Text,
   TextField,
 } from '@shopify/polaris';
 import { showToast } from './toast';
+import { WIDGETS } from '@/lib/shopify/widgets';
 import type { WidgetSettings } from '@/lib/widgets/settings';
+import { WidgetPreview } from './widget-preview';
 
 /**
  * Colour input.
@@ -145,58 +148,27 @@ function Section({
   );
 }
 
-/** A live preview, built from the same values the storefront will use. */
-function Preview({ s }: { s: WidgetSettings }) {
-  const star = (filled: boolean) => (
-    <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true">
-      <path
-        d="M10 1.6l2.6 5.2 5.8.85-4.2 4.1 1 5.75L10 14.8l-5.2 2.7 1-5.75L1.6 7.65l5.8-.85z"
-        fill={filled ? s.starColor : s.borderColor}
-      />
-    </svg>
-  );
+/** Every widget a merchant can look at while adjusting these values. */
+const PREVIEWABLE = WIDGETS.filter((w) => w.kind === 'block').map((w) => ({
+  label: w.name,
+  value: w.id,
+}));
 
-  return (
-    <div
-      style={{
-        border: `1px solid ${s.borderColor}`,
-        borderRadius: s.cornerRadius,
-        padding: s.spacing,
-        color: s.textColor,
-        fontSize: 14,
-      }}
-    >
-      <div style={{ fontWeight: 600, marginBottom: 8 }}>{s.heading}</div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-        <strong>4.5</strong>
-        {[1, 2, 3, 4, 5].map((i) => (
-          <span key={i}>{star(i <= 4)}</span>
-        ))}
-        <span style={{ color: s.mutedColor, fontSize: 13 }}>2 reviews</span>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        {[1, 2, 3, 4, 5].map((i) => (
-          <span key={i}>{star(i <= 5)}</span>
-        ))}
-        <strong style={{ fontSize: 13 }}>Exactly as described</strong>
-      </div>
-      <div style={{ color: s.mutedColor, fontSize: 12, marginTop: 2 }}>
-        Reviewed on 12 September 2026 · Verified purchase
-      </div>
-      <div style={{ marginTop: 6, lineHeight: 1.5 }}>
-        Arrived faster than expected and the fit is spot on.
-      </div>
-      <div style={{ color: s.mutedColor, fontSize: 12, marginTop: 10 }}>
-        — {s.anonymousLabel}
-      </div>
-    </div>
-  );
-}
-
-export function WidgetCustomizer({ initial }: { initial: WidgetSettings }) {
+export function WidgetCustomizer({
+  initial,
+  widgetId = 'review-display',
+}: {
+  initial: WidgetSettings;
+  /** The widget whose card this button sits under — what the preview opens on. */
+  widgetId?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [s, setS] = useState<WidgetSettings>(initial);
   const [saving, setSaving] = useState(false);
+  // Opens on the widget they clicked, but they can look at any of them: one
+  // save changes all seven, and the only way to see that is to be able to
+  // flip between them without closing the dialog.
+  const [shape, setShape] = useState(widgetId);
   // One at a time. Every section open at once is the flat wall this replaced.
   const [section, setSection] = useState<string | null>('colors');
   const toggle = (id: string) => setSection((cur) => (cur === id ? null : id));
@@ -258,10 +230,23 @@ export function WidgetCustomizer({ initial }: { initial: WidgetSettings }) {
 
             <Card>
               <BlockStack gap="300">
-                <Text as="h3" variant="headingSm">
-                  Preview
+                <InlineStack align="space-between" blockAlign="center" gap="300">
+                  <Text as="h3" variant="headingSm">
+                    Preview
+                  </Text>
+                  <Select
+                    label="Preview widget"
+                    labelHidden
+                    options={PREVIEWABLE}
+                    value={shape}
+                    onChange={setShape}
+                  />
+                </InlineStack>
+                <WidgetPreview id={shape} s={s} />
+                <Text as="p" variant="bodySm" tone="subdued">
+                  A representation, not your storefront — the real block uses your theme’s
+                  typeface and background. Sample reviews.
                 </Text>
-                <Preview s={s} />
               </BlockStack>
             </Card>
 
