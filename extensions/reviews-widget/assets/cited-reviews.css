@@ -47,12 +47,18 @@
   }
 }
 
+/*
+ * A section heading, at section-heading size. This was 1rem — the same size as
+ * the review bodies underneath it — so the block began with no visible start
+ * and read as a loose pile of text dropped into the page rather than a part of
+ * it. `em`-relative so it still tracks a theme that sets its own base size.
+ */
 .cited-reviews__heading {
-  font-size: 1rem;
+  font-size: 1.5rem;
   font-weight: 600;
-  line-height: 1.25;
-  letter-spacing: -0.01em;
-  margin: 0 0 calc(var(--cited-gap) * 0.5);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  margin: 0 0 calc(var(--cited-gap) * 0.75);
 }
 
 /* ── Rating summary, as a disclosure ───────────────────────────────
@@ -510,44 +516,81 @@
   border-radius: calc(var(--cited-radius) * 1.5);
 }
 
+/*
+ * Cards in columns, not one long stack.
+ *
+ * A single column of hairline-separated reviews wastes the width a product
+ * page gives it and makes ten reviews look like ten screens of reading. Three
+ * columns put roughly three times as much above the fold, which is this
+ * list's actual job: show that many people bought this and said so.
+ *
+ * `auto-fill` with a minimum rather than `repeat(3, …)`. The same rule then
+ * gives two columns in a narrow theme container and one on a phone, without a
+ * media query per breakpoint guessing at widths this block does not control —
+ * it is placed inside someone else's layout and cannot know its own width.
+ *
+ * `align-items: start` so one long review does not stretch its neighbours to
+ * match. A ragged bottom edge is correct here; equal heights would mean
+ * columns of mostly empty box.
+ */
 .cited-reviews__list {
   list-style: none;
-  margin: calc(var(--cited-gap) * 1.5) 0 0;
+  margin: calc(var(--cited-gap) * 1.25) 0 0;
   padding: 0;
   display: grid;
-  /* Gap AND padding would double the space between reviews; the separator
-   * needs the padding, so the gap goes to zero. */
-  gap: 0;
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  align-items: start;
+  gap: var(--cited-gap);
 }
 
 .cited-review {
-  padding: calc(var(--cited-gap) * 1.25) 0;
-  border-bottom: 1px solid var(--cited-hairline);
-}
-
-/* No trailing rule above the form — it would read as a broken table edge. */
-.cited-review:last-child { border-bottom: 0; }
-
-/* Who wrote it, on its own line above the verdict. */
-.cited-review__who {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
+  padding: calc(var(--cited-gap) * 0.875);
+  border: 1px solid var(--cited-hairline);
+  border-radius: var(--cited-radius);
+  /*
+   * Nothing tints the card. A filled surface behind every review turns the
+   * grid into a wall of grey slabs on a light theme and a row of glowing
+   * panels on a dark one; the border alone says "this is one review".
+   */
+  background: transparent;
 }
 
 /*
- * Stars and title on ONE line, title not wrapped to its own row.
- * "★★★★★ Good for casual wear" is a single sentence a shopper reads in one
- * movement; breaking the title underneath turns one glance into two.
+ * Name left, date right. In a single column the date could sit with the rest
+ * of the metadata; in a grid that stacks the same four facts three times
+ * across, the right-aligned date is what gives each card an edge to read
+ * against. `baseline` so the two different type sizes sit on one line.
  */
-.cited-review__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cited-review__who {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.cited-review__date {
+  flex: none;
+  font-size: 0.75rem;
+  color: var(--cited-muted);
+}
+
+/*
+ * Stars on their own row, under the name.
+ *
+ * They shared a line with the title while the name sat above with an avatar.
+ * In a 17rem column that line wrapped on most reviews, so the title broke
+ * mid-phrase against the stars and each card started differently. Person →
+ * verdict → headline, each on its own row, is what makes a grid of cards
+ * scannable down the columns rather than readable one at a time.
+ */
+.cited-review__head { display: flex; align-items: center; gap: 8px; line-height: 0; }
 
 .cited-review__title {
   font-size: 0.9375rem;
   font-weight: 700;
-  line-height: 1.3;
-  margin: 0;
+  line-height: 1.35;
+  margin: 6px 0 0;
   color: var(--cited-text);
 }
 
@@ -556,27 +599,12 @@
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  margin-top: 4px;
   font-size: 0.8125rem;
   color: var(--cited-muted);
 }
 
-/* Initial-in-a-circle. No image, no request, no generated identicon. */
-.cited-review__avatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: var(--cited-surface);
-  border: 1px solid var(--cited-hairline);
-  color: var(--cited-text);
-  font-size: 0.75rem;
-  font-weight: 600;
-  line-height: 1;
-  flex: none;
-}
+/* Collapses to nothing on a review with no badge, so it costs no row. */
+.cited-review__meta:empty { display: none; }
 
 .cited-review__author { font-weight: 600; color: var(--cited-text); }
 
@@ -604,11 +632,25 @@
 
 .cited-review__body { margin-top: 10px; line-height: 1.65; }
 
-.cited-review__media { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+/*
+ * A fixed four-up grid, not a flex row of 88px tiles.
+ *
+ * The tiles were a fixed pixel size chosen when a review was full-width; in a
+ * 17rem column two of them fit and the rest wrapped to a second and third row,
+ * so a review with four photos was mostly photos. Fractional columns make the
+ * tiles fit whatever width the theme gives the card, and the row stays one row.
+ */
+.cited-review__media {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-top: 12px;
+}
 
 .cited-review__media-item {
-  width: 88px;
-  height: 88px;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
   object-fit: cover;
   border-radius: var(--cited-radius);
   border: 1px solid var(--cited-hairline);
@@ -626,9 +668,11 @@
  * has nothing to letterbox in the common case and degrades gracefully when a
  * clip is portrait.
  */
+/* A clip is landscape, so it takes two of the four columns rather than being
+ * letterboxed into a square with black bars down both sides. */
 .cited-review__media-item--video {
-  width: 158px;
-  height: 88px;
+  grid-column: span 2;
+  aspect-ratio: 16 / 9;
   object-fit: contain;
   background: #000;
 }
@@ -1169,3 +1213,307 @@
 }
 
 .cited-reviews .cited-summary__quote-rating { line-height: 0; }
+
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+ * Tabs, filters and sort â€” state without JavaScript
+ *
+ * Radio inputs sit as direct children of .cited-reviews, visually hidden but
+ * focusable, and every rule below reads them with `~`. That is why the markup
+ * puts them at the top of the section rather than inside the controls: a
+ * sibling combinator reaches forward only, so state declared first can style
+ * anything after it, while the labels that operate it live wherever they look
+ * right.
+ *
+ * Selectors key off CLASSES, never ids. A block's uid is known to Liquid and
+ * not to this file, so id-based rules would have forced all of this into an
+ * inline <style> â€” per block, uncacheable, and duplicated on any page showing
+ * two Cited widgets.
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+
+/*
+ * Hidden, but not display:none and not [hidden] â€” either would take the input
+ * out of the focus order and make every control here unreachable by keyboard.
+ * A 1px clipped box stays focusable and stays operable.
+ */
+.cited-reviews .cited-state {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* â”€â”€ Tabs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+.cited-reviews .cited-tabs {
+  display: flex;
+  gap: 24px;
+  margin-bottom: var(--cited-gap);
+  border-bottom: 1px solid var(--cited-hairline);
+}
+
+.cited-reviews .cited-tabs__tab {
+  padding: 0 0 10px;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--cited-muted);
+  cursor: pointer;
+  /* Sits on the container's border so the active underline replaces it
+   * rather than stacking a second line under the first. */
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+}
+
+.cited-reviews .cited-state--tab-product:checked ~ .cited-tabs .cited-tabs__tab:first-child,
+.cited-reviews .cited-state--tab-store:checked ~ .cited-tabs .cited-tabs__tab:last-child {
+  color: var(--cited-text);
+  font-weight: 600;
+  border-bottom-color: currentColor;
+}
+
+/* Which panel is showing. Both are siblings of the radios, which is the whole
+ * reason the store panel is not nested inside the product layout. */
+.cited-reviews .cited-state--tab-store:checked ~ .cited-reviews__layout { display: none; }
+.cited-reviews .cited-state--tab-product:checked ~ .cited-store { display: none; }
+
+/* â”€â”€ The score, as a headline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+.cited-reviews .cited-hero {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  text-align: center;
+  padding-bottom: calc(var(--cited-gap) * 0.75);
+}
+
+.cited-reviews .cited-hero__score {
+  font-size: 3rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--cited-text);
+}
+
+.cited-reviews .cited-hero__stars { line-height: 0; }
+
+.cited-reviews .cited-hero__count {
+  font-size: 0.875rem;
+  color: var(--cited-muted);
+}
+
+/* â”€â”€ Images from reviews â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+.cited-reviews .cited-gallery { margin-bottom: var(--cited-gap); }
+
+.cited-reviews .cited-gallery__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.cited-reviews .cited-gallery__count {
+  font-weight: 400;
+  font-size: 0.8125rem;
+  color: var(--cited-muted);
+}
+
+/*
+ * Native overflow scrolling with snap points. No arrows: a button that scrolls
+ * a container needs JavaScript, and this already works by trackpad, touch,
+ * scrollbar and keyboard. Arrows drawn for looks that did nothing with
+ * scripting off would be worse than none at all.
+ */
+.cited-reviews .cited-gallery__strip {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  padding: 0 0 6px;
+  list-style: none;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+}
+
+.cited-reviews .cited-gallery__item { flex: none; scroll-snap-align: start; }
+
+.cited-reviews .cited-gallery__link { display: block; line-height: 0; }
+
+.cited-reviews .cited-gallery__link img {
+  width: 112px;
+  height: 140px;
+  object-fit: cover;
+  border-radius: var(--cited-radius);
+  border: 1px solid var(--cited-hairline);
+  background: var(--cited-surface);
+}
+
+/* â”€â”€ Filter and sort row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+.cited-reviews .cited-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.cited-reviews .cited-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cited-reviews .cited-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid var(--cited-hairline);
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--cited-text);
+  cursor: pointer;
+  white-space: nowrap;
+  /* The chips are <label> and <summary>; the disclosure marker has to go or
+   * the rating menu renders a triangle inside a pill. */
+  list-style: none;
+}
+
+.cited-reviews .cited-chip::-webkit-details-marker { display: none; }
+
+/*
+ * The selected chip inverts. Not a tint â€” at 13px a background at 8% opacity
+ * is indistinguishable from an unselected chip on half the themes this lands
+ * in, and "which filter am I looking at" is the one thing this row must
+ * answer at a glance. Canvas is the theme's own page colour, so the label
+ * stays legible on a dark theme where hardcoded white would vanish.
+ */
+.cited-reviews .cited-state--f-all:checked ~ .cited-reviews__layout .cited-chip--all,
+.cited-reviews .cited-state--f-photo:checked ~ .cited-reviews__layout .cited-chip--photo,
+.cited-reviews .cited-state--f-video:checked ~ .cited-reviews__layout .cited-chip--video {
+  background: var(--cited-text);
+  border-color: var(--cited-text);
+  color: Canvas;
+}
+
+.cited-reviews .cited-sort {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cited-reviews .cited-sort__label {
+  font-size: 0.8125rem;
+  color: var(--cited-muted);
+}
+
+/* â”€â”€ Dropdown menus â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+.cited-reviews .cited-menu { position: relative; }
+
+.cited-reviews .cited-menu__panel {
+  position: absolute;
+  z-index: 3;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 11rem;
+  display: grid;
+  padding: 6px;
+  border: 1px solid var(--cited-hairline);
+  border-radius: var(--cited-radius);
+  /* Canvas/CanvasText are the system's own page colours, so the panel is
+   * opaque on a light theme and on a dark one without this file guessing
+   * which it has been dropped into. */
+  background: Canvas;
+  color: CanvasText;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+}
+
+.cited-reviews .cited-menu--right .cited-menu__panel { left: auto; right: 0; }
+
+.cited-reviews .cited-menu__item {
+  padding: 7px 10px;
+  border-radius: calc(var(--cited-radius) * 0.75);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cited-reviews .cited-menu__item:hover { background: var(--cited-surface); }
+
+/* â”€â”€ What the filters actually do â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+/*
+ * Media filters. `display: none` rather than visibility, so a hidden card
+ * gives its grid cell back and the remaining reviews close up â€” a filter that
+ * leaves holes where the non-matching reviews were reads as broken.
+ */
+.cited-reviews .cited-state--f-photo:checked ~ .cited-reviews__layout .cited-review:not(.cited-review--photo),
+.cited-reviews .cited-state--f-video:checked ~ .cited-reviews__layout .cited-review:not(.cited-review--video) {
+  display: none;
+}
+
+/* Rating filter. One rule per bucket; there are five and they are fixed. */
+.cited-reviews .cited-state--r5:checked ~ .cited-reviews__layout .cited-review:not(.cited-review--r5),
+.cited-reviews .cited-state--r4:checked ~ .cited-reviews__layout .cited-review:not(.cited-review--r4),
+.cited-reviews .cited-state--r3:checked ~ .cited-reviews__layout .cited-review:not(.cited-review--r3),
+.cited-reviews .cited-state--r2:checked ~ .cited-reviews__layout .cited-review:not(.cited-review--r2),
+.cited-reviews .cited-state--r1:checked ~ .cited-reviews__layout .cited-review:not(.cited-review--r1) {
+  display: none;
+}
+
+/*
+ * Sorting, for real, with `order`.
+ *
+ * Each card carries --cited-rank-high (5 - rating) and --cited-rank-low
+ * (rating), stamped by Liquid. Grid honours `order`, so picking one of these
+ * reorders the list with no script and no second request â€” and because order
+ * is stable within equal values, the server's newest-first sequence survives
+ * inside each rating bucket. "Newest" needs no rule at all: it is the DOM
+ * order the server already sent.
+ *
+ * Deliberately absent: "most helpful". The standard product_review metaobject
+ * carries no helpfulness signal, so that control would be a label over an
+ * arbitrary order.
+ */
+.cited-reviews .cited-state--s-high:checked ~ .cited-reviews__layout .cited-review {
+  order: var(--cited-rank-high);
+}
+
+.cited-reviews .cited-state--s-low:checked ~ .cited-reviews__layout .cited-review {
+  order: var(--cited-rank-low);
+}
+
+/* â”€â”€ Store Reviews panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+.cited-reviews .cited-store__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  align-items: start;
+  gap: var(--cited-gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* â”€â”€ Narrow â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+@media (max-width: 560px) {
+  .cited-reviews__heading { font-size: 1.25rem; }
+  .cited-reviews .cited-hero__score { font-size: 2.5rem; }
+  .cited-reviews .cited-gallery__link img { width: 92px; height: 116px; }
+  /* Sort drops under the chips rather than squeezing both onto one line. */
+  .cited-reviews .cited-toolbar { justify-content: flex-start; }
+}

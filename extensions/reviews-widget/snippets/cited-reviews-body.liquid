@@ -156,6 +156,59 @@
 -%}
 
 {%- comment -%}
+  ── What the gallery and the filter chips need to know ──
+
+  Computed once, before anything renders, because all three answers are needed
+  ABOVE the list they describe: the photo strip sits at the top, and a filter
+  chip that hides every review is worse than no chip, so "are there any
+  reviews with video?" has to be answered before the chip is drawn.
+
+  Liquid has no arrays to push onto, so the gallery is accumulated as a
+  delimited string and split back. `|` cannot occur in a Shopify CDN URL, which
+  is what makes it safe as a separator.
+{%- endcomment -%}
+{%- liquid
+  assign gallery_raw = ''
+  assign any_photos = false
+  assign any_videos = false
+
+  if show_media and reviews_list != blank
+    for review in reviews_list limit: per_page
+      for media_url in review.media_urls
+        assign is_video = false
+        if media_url contains '/cdn/shop/videos/' or media_url contains '.mp4' or media_url contains '.webm' or media_url contains '.mov'
+          assign is_video = true
+        endif
+        if is_video
+          assign any_videos = true
+        else
+          assign any_photos = true
+          assign gallery_raw = gallery_raw | append: media_url | append: '|'
+        endif
+      endfor
+    endfor
+  endif
+
+  assign gallery = ''
+  if gallery_raw != blank
+    assign gallery = gallery_raw | split: '|'
+  endif
+
+  # The store-wide digest, for the second tab. Absent until the worker has
+  # published one, which is why the tab bar below is conditional rather than
+  # assumed — a tab that opens an empty panel is worse than one tab.
+  assign store_digest = shop.metafields[cited_ns].digest.value
+  if store_digest == blank
+    assign store_digest = shop.metafields.app.digest.value
+  endif
+  assign store_reviews = store_digest.reviews
+  assign has_store = false
+  if store_reviews != blank and store_reviews.size > 0
+    assign has_store = true
+  endif
+-%}
+
+{%- comment -%}
   Styles live in assets/, not in a "stylesheet" tag: that tag is a theme
   *section* feature and the extension bundler rejects it in an app block
   ("Cannot use stylesheet tag in app blocks"). Emitting the link here also
@@ -198,8 +251,58 @@
   style="{{ cited_vars }}"
   {{ shopify_attributes }}
 >
+  {%- comment -%}
+    ── Tabs, filters and sort, with no JavaScript ──
+
+    Radio inputs, visually hidden, as DIRECT children of the section. That
+    placement is the whole trick: `~` reaches only siblings, so state kept here
+    can style the layout, the panels and every card inside them, while the
+    labels that operate it sit wherever they look right.
+
+    The CLASS carries the meaning and the `name` carries the uid. Ids would
+    have forced the rules into inline CSS — a stylesheet cannot know a block's
+    uid — whereas classes let all of this live in assets/ and stay cacheable.
+    The uid on `name` is still essential: two Cited blocks on one page must not
+    share a radio group, or filtering one silently reorders the other.
+
+    Sorting is real and is done with `order`, not faked. What is NOT offered is
+    "most helpful": the standard product_review metaobject carries no
+    helpfulness signal, so that control would be a label over an arbitrary
+    order.
+  {%- endcomment -%}
+  {%- if has_reviews -%}
+    {%- if has_store -%}
+      <input class="cited-state cited-state--tab-product" type="radio" name="cited-tab-{{ uid }}" id="cited-tab-product-{{ uid }}" checked>
+      <input class="cited-state cited-state--tab-store" type="radio" name="cited-tab-{{ uid }}" id="cited-tab-store-{{ uid }}">
+    {%- endif -%}
+
+    <input class="cited-state cited-state--f-all" type="radio" name="cited-f-{{ uid }}" id="cited-f-all-{{ uid }}" checked>
+    {%- if any_photos -%}
+      <input class="cited-state cited-state--f-photo" type="radio" name="cited-f-{{ uid }}" id="cited-f-photo-{{ uid }}">
+    {%- endif -%}
+    {%- if any_videos -%}
+      <input class="cited-state cited-state--f-video" type="radio" name="cited-f-{{ uid }}" id="cited-f-video-{{ uid }}">
+    {%- endif -%}
+
+    <input class="cited-state cited-state--r-all" type="radio" name="cited-r-{{ uid }}" id="cited-r-all-{{ uid }}" checked>
+    {%- for i in (1..5) -%}
+      <input class="cited-state cited-state--r{{ i }}" type="radio" name="cited-r-{{ uid }}" id="cited-r-{{ i }}-{{ uid }}">
+    {%- endfor -%}
+
+    <input class="cited-state cited-state--s-new" type="radio" name="cited-s-{{ uid }}" id="cited-s-new-{{ uid }}" checked>
+    <input class="cited-state cited-state--s-high" type="radio" name="cited-s-{{ uid }}" id="cited-s-high-{{ uid }}">
+    <input class="cited-state cited-state--s-low" type="radio" name="cited-s-{{ uid }}" id="cited-s-low-{{ uid }}">
+  {%- endif -%}
+
   {%- if heading != blank -%}
     <h2 class="cited-reviews__heading">{{ heading | escape }}</h2>
+  {%- endif -%}
+
+  {%- if has_reviews and has_store -%}
+    <div class="cited-tabs" role="tablist">
+      <label class="cited-tabs__tab" for="cited-tab-product-{{ uid }}">Product Reviews</label>
+      <label class="cited-tabs__tab" for="cited-tab-store-{{ uid }}">Store Reviews</label>
+    </div>
   {%- endif -%}
 
   {%- comment -%}
@@ -275,13 +378,24 @@
   <div class="cited-reviews__layout">
     <aside class="cited-reviews__aside">
       {%- if has_reviews -%}
-        <p class="cited-reviews__score">
-          {%- render 'cited-stars', rating: rating_avg, scale_max: scale_max, size: 18 -%}
-          <strong>{{ rating_avg | round: 1 }} out of {{ scale_max }}</strong>
-        </p>
-        <p class="cited-reviews__total">
-          {{ rating_count }} global rating{% unless rating_count == 1 %}s{% endunless %}
-        </p>
+        {%- comment -%}
+          The score as a headline, not a sentence.
+
+          This was "4.8 out of 5" at body size with the stars beside it, which
+          is a fact stated rather than a verdict shown — a shopper scanning a
+          product page skims past it. The number carries the decision, so it
+          gets the size, and "out of 5" is dropped: the five stars underneath
+          say it without a word.
+        {%- endcomment -%}
+        <div class="cited-hero">
+          <span class="cited-hero__score">{{ rating_avg | round: 1 }}</span>
+          <span class="cited-hero__stars">
+            {%- render 'cited-stars', rating: rating_avg, scale_max: scale_max, size: 20 -%}
+          </span>
+          <span class="cited-hero__count">
+            {{ rating_count }} Review{% unless rating_count == 1 %}s{% endunless %}
+          </span>
+        </div>
 
         {%- render 'cited-breakdown', breakdown: rating_breakdown, total: rating_count, scale_max: scale_max -%}
       {%- else -%}
@@ -330,6 +444,121 @@
     <div class="cited-reviews__main">
 
   {%- comment -%}
+    ── Images from reviews ──
+
+    Every photo across the reviews on this page, in one scrollable strip. It is
+    the first thing a shopper looks at — a product worn by someone who is not a
+    model answers "what does this actually look like" faster than any
+    paragraph — and it was previously buried, four or five photos at a time,
+    inside individual reviews a shopper had to scroll to find.
+
+    Each photo is an anchor to the review it came from, so the strip is a way
+    INTO the reviews rather than a lightbox that dead-ends. No arrows: a
+    button that scrolls a container needs JavaScript, and native overflow
+    scrolling with snap points already works by trackpad, touch, scrollbar and
+    keyboard. Arrows drawn for looks that did nothing without JS would be worse
+    than none.
+  {%- endcomment -%}
+  {%- if gallery != blank and gallery.size > 1 -%}
+    <div class="cited-gallery">
+      <p class="cited-gallery__head">
+        Images from reviews
+        <span class="cited-gallery__count">{{ gallery.size }} photo{% unless gallery.size == 1 %}s{% endunless %}</span>
+      </p>
+      <ul class="cited-gallery__strip" role="list">
+        {%- for media_url in gallery limit: 16 -%}
+          <li class="cited-gallery__item">
+            <a class="cited-gallery__link" href="#cited-reviews-{{ uid }}">
+              <img
+                src="{{ media_url }}"
+                alt="Photo from a customer review"
+                loading="lazy"
+                decoding="async"
+                width="112"
+                height="140"
+              >
+            </a>
+          </li>
+        {%- endfor -%}
+      </ul>
+    </div>
+  {%- endif -%}
+
+  {%- comment -%}
+    ── Filter and sort ──
+
+    Labels only. Every one of them drives a radio declared at the top of the
+    section, so this whole row is inert markup — nothing here needs scripting,
+    and it all still works with JS disabled.
+
+    A chip is rendered only when it would match something. "Review with videos"
+    on a product whose reviews are all text is a control whose only possible
+    outcome is an empty list, and a shopper who clicks it concludes the widget
+    is broken rather than that the filter worked.
+  {%- endcomment -%}
+  {%- if has_reviews and reviews_list != blank -%}
+    <div class="cited-toolbar">
+      <div class="cited-chips">
+        {%- comment -%}
+          Each chip names itself in a class rather than relying on its position.
+          `nth-of-type` would have worked only while all three are present: on a
+          product whose reviews have video but no photos, the video chip becomes
+          the second label and a positional rule highlights the wrong one — or
+          nothing at all.
+        {%- endcomment -%}
+        <label class="cited-chip cited-chip--all" for="cited-f-all-{{ uid }}">All</label>
+        {%- if any_photos -%}
+          <label class="cited-chip cited-chip--photo" for="cited-f-photo-{{ uid }}">Review with photos</label>
+        {%- endif -%}
+        {%- if any_videos -%}
+          <label class="cited-chip cited-chip--video" for="cited-f-video-{{ uid }}">Review with videos</label>
+        {%- endif -%}
+
+        {%- comment -%}
+          `details` for the rating menu, because a dropdown that opens is the
+          one control here a browser gives us for free — keyboard, Escape and
+          focus handling included. The options inside are labels for radios
+          declared outside it, which is what lets a menu item filter a list it
+          is not a sibling of.
+        {%- endcomment -%}
+        <details class="cited-menu">
+          <summary class="cited-chip cited-chip--menu">
+            All ratings
+            <svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true" focusable="false">
+              <path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </summary>
+          <div class="cited-menu__panel">
+            <label class="cited-menu__item" for="cited-r-all-{{ uid }}">All ratings</label>
+            {%- for i in (1..5) reversed -%}
+              <label class="cited-menu__item" for="cited-r-{{ i }}-{{ uid }}">
+                {{ i }} star{% unless i == 1 %}s{% endunless %}
+              </label>
+            {%- endfor -%}
+          </div>
+        </details>
+      </div>
+
+      <div class="cited-sort">
+        <span class="cited-sort__label">Sort by</span>
+        <details class="cited-menu cited-menu--right">
+          <summary class="cited-chip cited-chip--menu">
+            <span class="cited-sort__current">Newest</span>
+            <svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true" focusable="false">
+              <path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </summary>
+          <div class="cited-menu__panel">
+            <label class="cited-menu__item" for="cited-s-new-{{ uid }}">Newest</label>
+            <label class="cited-menu__item" for="cited-s-high-{{ uid }}">Highest rated</label>
+            <label class="cited-menu__item" for="cited-s-low-{{ uid }}">Lowest rated</label>
+          </div>
+        </details>
+      </div>
+    </div>
+  {%- endif -%}
+
+  {%- comment -%}
     ── AI summary ──
     Sits between the aggregate and the review list because that is the order a
     shopper reads in: how many liked it, what they said about it, then the
@@ -360,8 +589,38 @@
           if review.app_verification_status == 'verified_buyer'
             assign r_verified = true
           endif
+
+          # Whole stars, for the rating filter and for the sort. `round` on a
+          # 4.5 gives 5, which is the bucket a shopper filtering for "5 stars"
+          # expects a 4.5 to be in.
+          assign r_int = r_rating | round
+          if r_int < 1
+            assign r_int = 1
+          endif
+
+          # What kind of media this review carries, decided here rather than in
+          # the markup below so the card can be classed before it is drawn —
+          # the photo and video filters are plain CSS over these classes.
+          assign r_photo = false
+          assign r_video = false
+          for media_url in review.media_urls
+            if media_url contains '/cdn/shop/videos/' or media_url contains '.mp4' or media_url contains '.webm' or media_url contains '.mov'
+              assign r_video = true
+            else
+              assign r_photo = true
+            endif
+          endfor
         -%}
-        <li class="cited-review">
+        {%- comment -%}
+          `order` is what makes sorting work without script. Both values are
+          stamped per card and the stylesheet picks one; grid honours `order`,
+          so "highest rated" is 5 - rating and "lowest" is rating, with the
+          server's newest-first order preserved inside each rating bucket.
+        {%- endcomment -%}
+        <li
+          class="cited-review cited-review--r{{ r_int }}{% if r_photo %} cited-review--photo{% endif %}{% if r_video %} cited-review--video{% endif %}"
+          style="--cited-rank-high: {{ 5 | minus: r_int }}; --cited-rank-low: {{ r_int }};"
+        >
           {%- comment -%}
             Reading order is person → verdict → provenance → detail, which is
             how a shopper actually interrogates a review: who said this, what
@@ -369,24 +628,15 @@
             Stars used to lead and the reviewer's name sat underneath, which
             reads as a rating that happens to have a person attached.
           {%- endcomment -%}
+          {%- comment -%}
+            Name and date on one line, the date pushed to the right. In a
+            single-column list the date could sit under the stars with
+            everything else; in a grid of cards that stacks the same four
+            facts three times across, a right-aligned date is what gives each
+            card an edge to read against.
+          {%- endcomment -%}
           <div class="cited-review__who">
-            {%- comment -%}
-              An initial rather than an avatar image: there is no photo to
-              show, and a generated identicon would be decoration that costs a
-              request. aria-hidden because the name follows it in full.
-            {%- endcomment -%}
-            <span class="cited-review__avatar" aria-hidden="true">{{ r_author | slice: 0 | upcase }}</span>
             <span class="cited-review__author">{{ r_author | escape }}</span>
-          </div>
-
-          <div class="cited-review__head">
-            {%- render 'cited-stars', rating: r_rating, scale_max: scale_max, size: 14 -%}
-            {%- if review.title != blank -%}
-              <h3 class="cited-review__title">{{ review.title | escape }}</h3>
-            {%- endif -%}
-          </div>
-
-          <div class="cited-review__meta">
             {%- if review.submitted_at != blank -%}
               <time class="cited-review__date" datetime="{{ review.submitted_at | date: '%Y-%m-%d' }}">
                 {%- comment -%}
@@ -396,9 +646,20 @@
                   makes the filter a no-op that prints the raw stored value.
                   Shoppers were being shown "2026-08-19T20:55:28Z".
                 {%- endcomment -%}
-                Reviewed on {{ review.submitted_at | date: '%d %B %Y' }}
+                Review on {{ review.submitted_at | date: '%d %b %Y' }}
               </time>
             {%- endif -%}
+          </div>
+
+          <div class="cited-review__head">
+            {%- render 'cited-stars', rating: r_rating, scale_max: scale_max, size: 15 -%}
+          </div>
+
+          {%- if review.title != blank -%}
+            <h3 class="cited-review__title">{{ review.title | escape }}</h3>
+          {%- endif -%}
+
+          <div class="cited-review__meta">
             {%- comment -%}
               This is OUR order-match badge. It is deliberately NOT, and must
               never resemble, the "Verified by Shop" badge.
@@ -720,6 +981,31 @@
   {%- endif -%}
     </div>
   </div>
+
+  {%- comment -%}
+    ── Store Reviews ──
+
+    The second tab: what people say about this shop, not this product. It reads
+    from the store-wide digest the worker already publishes for the carousel and
+    testimonial blocks, and renders through the same card snippet those use — a
+    second card written here would be the drift that made the two entry points
+    of this very file diverge.
+
+    A sibling of the product layout, and of the radios at the top, which is what
+    lets one CSS rule swap them. Rendered only when the digest has something in
+    it, so the tab bar never opens an empty panel.
+  {%- endcomment -%}
+  {%- if has_reviews and has_store -%}
+    <div class="cited-store">
+      <ul class="cited-store__grid" role="list">
+        {%- for r in store_reviews limit: 9 -%}
+          <li>
+            {%- render 'cited-quote-card', r: r, scale_max: scale_max, anon: anonymous_label, show_product: true -%}
+          </li>
+        {%- endfor -%}
+      </ul>
+    </div>
+  {%- endif -%}
 </section>
 
 {%- comment -%}
