@@ -36,6 +36,24 @@ describe('themeEditorUrl', () => {
     expect(url.searchParams.get('template')).toBe('product');
   });
 
+  it('keeps the full reviews section out of the product column', () => {
+    // `mainSection` is INSIDE the theme's product section — a ~420px sidebar
+    // beside the product image on a modern theme. Defaulting every widget
+    // there squeezed the whole reviews section, two columns and all, into it
+    // and the review grid overflowed off the right edge.
+    expect(
+      new URL(themeEditorUrl(shop, byId('review-display'))).searchParams.get('target'),
+    ).toBe('newAppsSection');
+
+    // A rating line, on the other hand, belongs exactly there.
+    expect(
+      new URL(themeEditorUrl(shop, byId('star-rating'))).searchParams.get('target'),
+    ).toBe('mainSection');
+    expect(
+      new URL(themeEditorUrl(shop, byId('review-snippet'))).searchParams.get('target'),
+    ).toBe('mainSection');
+  });
+
   it('targets the Apps section, the one every JSON template must accept', () => {
     // `mainSection` needs the theme's product section to declare `@app`
     // support. Plenty do not, and when it is absent the editor adds nothing

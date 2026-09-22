@@ -306,11 +306,13 @@ export function AddWidgetModal({
   const [themeId, setThemeId] = useState('');
   const [template, setTemplate] = useState('');
   /*
-   * Inside the product section by default. That is where reviews belong, and
-   * the alternative — a new section, which no theme can refuse — puts them at
-   * the very bottom of the template, under Related products.
+   * The widget's own default, not one default for all of them. `mainSection`
+   * means inside the theme's product section, which on a modern theme is the
+   * narrow column beside the product image — right for a rating line, and
+   * ruinous for the full reviews section, which arrived squeezed into a 420px
+   * sidebar with its grid overflowing the edge.
    */
-  const [target, setTarget] = useState<DeepLinkTarget>('mainSection');
+  const [target, setTarget] = useState<DeepLinkTarget>(widget.target);
   const [instructions, setInstructions] = useState(false);
   /** Survives re-renders, so the fetch fires once without being a dependency. */
   const asked = useRef(false);
@@ -467,15 +469,21 @@ export function AddWidgetModal({
                     <Select
                       label="Where on the page"
                       options={[
-                        { label: 'Inside the main section, with the product', value: 'mainSection' },
-                        { label: 'As a new section at the end of the page', value: 'newAppsSection' },
+                        {
+                          label: 'Full width, in its own section',
+                          value: 'newAppsSection',
+                        },
+                        {
+                          label: 'Inside the product column, beside the image',
+                          value: 'mainSection',
+                        },
                       ]}
                       value={target}
                       onChange={(v) => setTarget(v as DeepLinkTarget)}
                       helpText={
-                        target === 'mainSection'
-                          ? 'Lands directly under the product. A few themes don’t allow this — if the editor says there is a problem with the app block, choose the other option.'
-                          : 'Always works, but the new section lands at the bottom of the page. You can drag it up in the editor.'
+                        target === 'newAppsSection'
+                          ? 'The whole width of the page. It arrives at the bottom — drag the Apps section up to sit just under the product.'
+                          : 'The narrow column next to the product image. Right for a rating line or a short quote; the full reviews section will be cramped in there.'
                       }
                     />
                   )}

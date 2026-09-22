@@ -43,6 +43,22 @@ import { APP_CLIENT_ID } from './app-identity';
  */
 export const DEEP_LINK_APP_ID = APP_CLIENT_ID;
 
+/**
+ * Where in the template the editor drops the block.
+ *
+ * `mainSection` puts it INSIDE the theme's own product section, which is where
+ * reviews belong — directly under the product, above whatever the template
+ * puts next. It requires that section to declare app-block support
+ * (`{"type": "@app"}`), and a theme that does not adds nothing and says "There
+ * is a problem with the app block."
+ *
+ * `newAppsSection` creates a section of its own. It cannot be refused — every
+ * JSON template in a Theme Store theme must accept app blocks there — but the
+ * new section lands at the END of the template, so on a product page the
+ * reviews appear below Related products rather than below the product.
+ */
+export type DeepLinkTarget = 'mainSection' | 'newAppsSection';
+
 export interface WidgetDef {
   id: string;
   name: string;
@@ -69,6 +85,20 @@ export interface WidgetDef {
    * and after placing one, could not tell where to go and look at it.
    */
   where: string;
+  /**
+   * Where in the template this one belongs, by default.
+   *
+   * `mainSection` means INSIDE the theme's product section — which on every
+   * modern theme is the narrow right-hand column beside the product image.
+   * That is exactly right for a rating line or a one-line quote, and wrong for
+   * the full reviews section: defaulting the whole thing there squeezed a
+   * two-column layout, a photo strip and a review grid into a 420px sidebar.
+   *
+   * So it is per widget rather than one default for all of them. Anything
+   * full-width goes to `newAppsSection`, which is its own section below the
+   * product.
+   */
+  target: DeepLinkTarget;
   /** What the merchant gets, in their words, for the card body. */
   points: string[];
 }
@@ -82,6 +112,7 @@ export const WIDGETS: WidgetDef[] = [
     handle: 'reviews',
     kind: 'block',
     where: "On a product page, below the product — the full reviews section",
+    target: 'newAppsSection',
     points: [
       'Rating breakdown graph',
       'Reviews with photos and video',
@@ -97,6 +128,7 @@ export const WIDGETS: WidgetDef[] = [
     handle: 'star-rating',
     kind: 'block',
     where: "On a product page, under the title or beside the price",
+    target: 'mainSection',
     points: ['Links to the reviews below', 'No JavaScript', 'Matches your theme’s colours'],
   },
   {
@@ -107,6 +139,7 @@ export const WIDGETS: WidgetDef[] = [
     handle: 'review-snippet',
     kind: 'block',
     where: "On a product page, next to the Add to cart button",
+    target: 'mainSection',
     points: [
       'Picks reviews that actually said something',
       'Most helpful first, not newest',
@@ -122,6 +155,7 @@ export const WIDGETS: WidgetDef[] = [
     kind: 'block',
     template: 'index',
     where: "On your home page or any landing page — a scrollable row",
+    target: 'newAppsSection',
     points: [
       'Works on any page, not just products',
       'Scrolls by touch, trackpad, keyboard and scrollbar',
@@ -137,6 +171,7 @@ export const WIDGETS: WidgetDef[] = [
     kind: 'block',
     template: 'index',
     where: "On your home page or an About page — a quiet quote strip",
+    target: 'newAppsSection',
     points: ['Fewer, longer quotes', 'Reads rather than skims', 'No product thumbnails by default'],
   },
   {
@@ -148,6 +183,7 @@ export const WIDGETS: WidgetDef[] = [
     kind: 'block',
     template: 'index',
     where: "Anywhere small: a header, a footer, or beside a hero",
+    target: 'newAppsSection',
     points: [
       'Averaged across reviews, not across products',
       'One line or stacked',
@@ -163,6 +199,7 @@ export const WIDGETS: WidgetDef[] = [
     kind: 'block',
     template: 'page',
     where: "On a page template of its own — a browsable grid",
+    target: 'newAppsSection',
     points: ['Add to any page template', 'Reflows to the space your theme gives it', 'Store rating at the top'],
   },
   {
@@ -173,6 +210,7 @@ export const WIDGETS: WidgetDef[] = [
     handle: 'reviews-embed',
     kind: 'embed',
     where: "On every product page at once, with nothing to place",
+    target: 'newAppsSection',
     points: [
       'Works on any theme',
       'Nothing to position by hand',
@@ -180,22 +218,6 @@ export const WIDGETS: WidgetDef[] = [
     ],
   },
 ];
-
-/**
- * Where in the template the editor drops the block.
- *
- * `mainSection` puts it INSIDE the theme's own product section, which is where
- * reviews belong — directly under the product, above whatever the template
- * puts next. It requires that section to declare app-block support
- * (`{"type": "@app"}`), and a theme that does not adds nothing and says "There
- * is a problem with the app block."
- *
- * `newAppsSection` creates a section of its own. It cannot be refused — every
- * JSON template in a Theme Store theme must accept app blocks there — but the
- * new section lands at the END of the template, so on a product page the
- * reviews appear below Related products rather than below the product.
- */
-export type DeepLinkTarget = 'mainSection' | 'newAppsSection';
 
 export interface DeepLinkOptions {
   /** Numeric theme id. Omitted means the published theme. */
@@ -249,5 +271,5 @@ export function themeEditorUrl(
   // from the theme's own file list. Encoded because a template name is not
   // ours to vouch for.
   const template = encodeURIComponent(opts.template ?? widget.template ?? 'product');
-  return `${base}?template=${template}&addAppBlockId=${ref}&target=${opts.target ?? 'newAppsSection'}`;
+  return `${base}?template=${template}&addAppBlockId=${ref}&target=${opts.target ?? widget.target}`;
 }

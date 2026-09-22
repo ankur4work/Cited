@@ -85,7 +85,10 @@ function Frame({ s, children }: { s: WidgetSettings; children: React.ReactNode }
         color: s.textColor,
         background: '#FFFFFF',
         fontSize: 12,
-        height: 148,
+        // 148 cut the Review Display drawing off mid-histogram, so its bottom
+        // row and the foot of both review cards were sliced — which reads as a
+        // broken image rather than as a preview that continues.
+        height: 168,
         overflow: 'hidden',
         // The carousel and the page preview both run past the edge on purpose.
         position: 'relative',
@@ -242,8 +245,11 @@ export function WidgetPreview({ id, s }: { id: string; s: WidgetSettings }) {
                 <Stars n={5} s={s} size={10} />
               </div>
               <div style={{ ...muted(s), marginTop: 2, fontSize: 10 }}>128 Reviews</div>
+              {/* Three rows, not five. The aside's job in a thumbnail is to
+                * say "there is a histogram here", and five rows of 4px bar
+                * pushed the cards beside them off the bottom of the frame. */}
               <div style={{ marginTop: 6, display: 'grid', gap: 3 }}>
-                {[80, 20, 0, 0].map((pct, i) => (
+                {[80, 20, 0].map((pct, i) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
                     <span style={{ ...muted(s), fontSize: 9, width: 6 }}>{5 - i}</span>
                     {/* A filled track even at 0% — the empty outlined boxes this
@@ -312,9 +318,24 @@ export function WidgetPreview({ id, s }: { id: string; s: WidgetSettings }) {
                     <div style={{ marginTop: 3 }}>
                       <Stars n={r.rating} s={s} size={10} />
                     </div>
-                    <div style={{ fontWeight: 600, fontSize: 10, marginTop: 3 }}>{r.title}</div>
+                    {/* One line, ellipsised. "Exactly as described" wrapped to
+                      * "Exactly as" over "described" in a card this narrow,
+                      * which looked like truncated garbage rather than a
+                      * headline. */}
+                    <div
+                      style={{
+                        fontWeight: 600,
+                        fontSize: 10,
+                        marginTop: 3,
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {r.title}
+                    </div>
                     <div style={{ ...muted(s), marginTop: 2, fontSize: 10, lineHeight: 1.4 }}>
-                      {r.body.slice(0, 38)}…
+                      {r.body.slice(0, 32)}…
                     </div>
                   </div>
                 ))}

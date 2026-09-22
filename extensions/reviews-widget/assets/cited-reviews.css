@@ -26,6 +26,23 @@
   color: var(--cited-text);
   display: block;
   margin-block: calc(var(--cited-gap) * 1.25);
+
+  /*
+   * The block measures ITSELF, not the window.
+   *
+   * Every responsive rule here used to be a viewport media query, which is the
+   * wrong ruler for a block a merchant can drop anywhere: placed in a theme's
+   * product column — a ~420px sidebar on a 1400px monitor — the window was
+   * "wide", so the two-column layout stayed two columns and the review grid,
+   * whose tracks have a 17rem minimum, overflowed off the right edge.
+   *
+   * With a container the rules below fire on the width this block actually
+   * has. A browser without container query support keeps the old viewport
+   * behaviour, which is what it had before and is correct for the common case
+   * of a full-width section.
+   */
+  container-type: inline-size;
+  container-name: cited;
   /*
    * "See all reviews" is an in-page anchor, and most themes have a sticky
    * header. Without this the browser scrolls the section to y=0, the header
@@ -273,9 +290,20 @@
  * One column once the two would be too narrow to read. The aside is a summary,
  * so it stays first — a shopper scrolling to reviews wants the score before
  * the list, not after it.
+ *
+ * Measured against the block's own width. The viewport version of this rule
+ * never fired when the block was placed in a theme's product column, because
+ * the WINDOW was wide even though the block was 420px.
  */
-@media (max-width: 760px) {
+@container cited (max-width: 46rem) {
   .cited-reviews__layout { grid-template-columns: 1fr; }
+}
+
+/* Fallback for browsers with no container query support. */
+@supports not (container-type: inline-size) {
+  @media (max-width: 760px) {
+    .cited-reviews__layout { grid-template-columns: 1fr; }
+  }
 }
 
 /* ── Review snippet block ──────────────────────────────────────────
@@ -558,7 +586,7 @@
   margin: calc(var(--cited-gap) * 1.25) 0 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(17rem, 100%), 1fr));
   align-items: start;
   gap: var(--cited-gap);
 }
@@ -1535,7 +1563,7 @@
   display: grid;
   /* auto-fit for the same reason as the product list: one store review must
    * not sit in a narrow box beside two empty columns. */
-  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(17rem, 100%), 1fr));
   align-items: start;
   gap: var(--cited-gap);
   margin: 0;
@@ -1545,10 +1573,36 @@
 
 /* â”€â”€ Narrow â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
-@media (max-width: 560px) {
+/*
+ * Narrow means the BLOCK is narrow, not the screen. In a theme's product
+ * column this is the state that applies on a desktop monitor, which is the
+ * case the viewport version of these rules could never see.
+ */
+@container cited (max-width: 34rem) {
   .cited-reviews__heading { font-size: 1.25rem; }
   .cited-reviews .cited-hero__score { font-size: 2.5rem; }
   .cited-reviews .cited-gallery__link img { width: 92px; height: 116px; }
-  /* Sort drops under the chips rather than squeezing both onto one line. */
-  .cited-reviews .cited-toolbar { justify-content: flex-start; }
+
+  /* Sort drops under the chips rather than squeezing both onto one line and
+   * breaking the words "Sort by" across two of them. */
+  .cited-reviews .cited-toolbar {
+    justify-content: flex-start;
+    gap: 8px;
+  }
+  .cited-reviews .cited-sort { width: 100%; }
+
+  /* The histogram's fixed label column is most of a narrow aside. */
+  .cited-reviews .cited-rating__row {
+    grid-template-columns: 2.5rem 1fr 2.25rem;
+    gap: 8px;
+  }
+}
+
+@supports not (container-type: inline-size) {
+  @media (max-width: 560px) {
+    .cited-reviews__heading { font-size: 1.25rem; }
+    .cited-reviews .cited-hero__score { font-size: 2.5rem; }
+    .cited-reviews .cited-gallery__link img { width: 92px; height: 116px; }
+    .cited-reviews .cited-toolbar { justify-content: flex-start; }
+  }
 }
