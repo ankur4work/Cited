@@ -14,8 +14,9 @@ import {
   Page,
   Text,
 } from '@shopify/polaris';
-import type { WidgetDef } from '@/lib/shopify/widgets';
+import { themeEditorUrl, type WidgetDef } from '@/lib/shopify/widgets';
 import type { WidgetSettings } from '@/lib/widgets/settings';
+import { AddWidgetModal } from './add-widget-modal';
 import { WidgetCustomizer } from './widget-customizer';
 import { WidgetPreview } from './widget-preview';
 
@@ -140,16 +141,23 @@ export function WidgetsView({
                       — so without it every card's actions sit at a different
                       height and the grid reads as broken.
 
-                      Only "Add widget" leaves the app. Placement is genuinely
-                      theme-editor work — the merchant choosing a spot in their
-                      own layout — whereas appearance is ours, and lives in the
-                      customiser so one setting covers every widget at once.
+                      Only "Add widget" leaves the app, and it asks first:
+                      which theme, and which page. Guessing those was what made
+                      the button feel broken — a merchant mid-redesign was sent
+                      to their live theme, and every widget was offered the
+                      product template whether or not the theme had one.
                     */}
                     <div style={{ marginTop: 'auto', paddingTop: 16 }}>
                       <InlineStack gap="200">
-                        <Button variant="primary" url={w.addUrl} target="_blank">
-                          Add widget
-                        </Button>
+                        <AddWidgetModal
+                          widget={w}
+                          shopDomain={shopDomain}
+                          fallbackUrl={w.addUrl}
+                          embedUrl={embed?.addUrl}
+                          buildUrl={({ themeId, template }) =>
+                            themeEditorUrl(shopDomain, w, { themeId, template })
+                          }
+                        />
                         {/*
                           Opens on THIS widget's shape. The settings are
                           global, but a merchant who clicked Customize under

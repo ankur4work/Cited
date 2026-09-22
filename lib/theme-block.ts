@@ -1,6 +1,8 @@
+import { env } from './env';
 import { logger } from './logger';
 import { prisma } from './prisma';
 import { ShopifyClient } from './shopify/client';
+import { DEEP_LINK_APP_ID } from './shopify/widgets';
 
 /**
  * Theme app block: placement and detection.
@@ -22,8 +24,38 @@ import { ShopifyClient } from './shopify/client';
  * from a page that may not be reachable.
  */
 
-/** Must match `uid` in extensions/reviews-widget/shopify.extension.toml. */
-export const THEME_EXTENSION_UUID = '6cea37c8-6927-f5f3-2a46-b9a5792e946fa85d53f9';
+/**
+ * The CLI's local `uid` from extensions/reviews-widget/shopify.extension.toml.
+ *
+ * Kept ONLY for detection, and only as one of two markers. It is not a uuid —
+ * 44 characters — and it is not what a deep link is addressed by; used as one,
+ * it produced "«reviews» not added. There is a problem with the app block." on
+ * every Add widget button this app has ever rendered. Deep links now use
+ * DEEP_LINK_APP_ID, which is the documented value.
+ */
+const EXTENSION_LOCAL_UID = '6cea37c8-6927-f5f3-2a46-b9a5792e946fa85d53f9';
+
+/**
+ * How one of our blocks appears in a theme file.
+ *
+ * Shopify writes an app block's type as
+ * `shopify://apps/{app-handle}/blocks/{block}/{extension-uuid}`, so this
+ * prefix identifies any Cited block without needing to know which uuid the
+ * theme recorded — the question that made the deep link wrong for a year.
+ */
+const THEME_BLOCK_PREFIX = `shopify://apps/${env.SHOPIFY_APP_HANDLE}/blocks/`;
+
+/**
+ * Is this theme file referring to a Cited block?
+ *
+ * Two markers rather than one. The prefix is the one that should always match;
+ * the local uid is kept because it is what the previous check looked for, and
+ * detection reporting "missing" on a store that is working is worse than a
+ * marker too many. Both strings are ours, so neither can match another app.
+ */
+function mentionsCited(content: string): boolean {
+  return content.includes(THEME_BLOCK_PREFIX) || content.includes(EXTENSION_LOCAL_UID);
+}
 
 /** File name of blocks/reviews.liquid, without the extension. */
 export const REVIEW_BLOCK_HANDLE = 'reviews';
@@ -51,7 +83,7 @@ export function themeEditorDeepLink(
   target: ThemeEditorTarget = 'mainSection',
 ): string {
   // Built by hand rather than with URLSearchParams, which percent-encodes the
-  // separator in `{uuid}/{handle}` to %2F. Shopify's editor expects a literal
+  // separator in `{id}/{handle}` to %2F. Shopify's editor expects a literal
   // slash there; encoded, it fails to resolve the block.
   //
   // Nothing here is user input — both values are module constants — so there
@@ -59,7 +91,7 @@ export function themeEditorDeepLink(
   return (
     `https://${shopDomain}/admin/themes/current/editor` +
     `?template=product` +
-    `&addAppBlockId=${THEME_EXTENSION_UUID}/${REVIEW_BLOCK_HANDLE}` +
+    `&addAppBlockId=${DEEP_LINK_APP_ID}/${REVIEW_BLOCK_HANDLE}` +
     `&target=${target}`
   );
 }
@@ -140,8 +172,8 @@ export async function checkThemeBlock(
       }
 
       // A template carries the block only when it is actually placed, so the
-      // uid appearing at all is the answer.
-      if (content.includes(THEME_EXTENSION_UUID)) return 'installed';
+      // reference appearing at all is the answer.
+      if (mentionsCited(content)) return 'installed';
     }
 
     return 'missing';
@@ -169,7 +201,7 @@ function appEmbedEnabled(settingsJson: string): boolean {
   } catch {
     // A theme may leave comments or trailing commas in settings_data.json.
     // Fall back to the substring, accepting that it cannot see `disabled`.
-    return settingsJson.includes(THEME_EXTENSION_UUID);
+    return mentionsCited(settingsJson);
   }
 
   const blocks = (parsed as { current?: { blocks?: Record<string, unknown> } })?.current?.blocks;
@@ -178,9 +210,7 @@ function appEmbedEnabled(settingsJson: string): boolean {
   return Object.values(blocks).some((block) => {
     const entry = block as { type?: unknown; disabled?: unknown };
     return (
-      typeof entry.type === 'string' &&
-      entry.type.includes(THEME_EXTENSION_UUID) &&
-      entry.disabled !== true
+      typeof entry.type === 'string' && mentionsCited(entry.type) && entry.disabled !== true
     );
   });
 }

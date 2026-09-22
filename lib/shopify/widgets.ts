@@ -7,11 +7,20 @@
  * step.
  */
 
+import { APP_CLIENT_ID } from './app-identity';
+
 /**
- * The theme app extension's registration uuid, for theme-editor deep links.
+ * The id a theme-editor deep link addresses this app's blocks by.
  *
- * Shopify addresses a block as `{uuid}/{handle}`, and there are THREE ids in
- * this project that look like they might be it. Two are not:
+ * Shopify writes it as `{uuid}/{handle}`, which reads like the theme app
+ * extension's uuid and is not: the documented value is **the app's api_key**,
+ * i.e. the `client_id` in shopify.app.toml.
+ *
+ *   https://shopify.dev/docs/apps/build/online-store/theme-app-extensions/configuration
+ *   .../editor?template={template}&addAppBlockId={api_key}/{handle}&target=newAppsSection
+ *
+ * Three other ids in this project look like candidates and none of them is
+ * this one:
  *
  *   - `uid` in extensions/reviews-widget/shopify.extension.toml —
  *     `6cea37c8…a85d53f9`, 44 characters, not a uuid at all. It is the CLI's
@@ -23,15 +32,16 @@
  *     is scoped to the VERSION. Releasing cited-reviews-34 changed it from
  *     `01a0c045-…` to `01a0c42b-…`, so pinning it would break the links again
  *     on the next deploy.
+ *   - the `uuid` in .shopify/deploy-bundle/manifest.json, which is stable
+ *     across releases — that is a real property, and it is why 61f1906 chose
+ *     it — but stable is not the same as correct, and it is a build artefact
+ *     that is not even committed.
  *
- * The one below is the `uuid` the CLI writes into
- * .shopify/deploy-bundle/manifest.json, which stayed put across that same
- * release. Stable across versions, changes only if the extension is
- * re-registered.
- *
- * Verified by releasing a version and re-reading both — not by inspection.
+ * The client id is the documented one, it is already asserted against the
+ * environment by the health check, and it cannot drift: it identifies the app,
+ * not a version or a directory.
  */
-export const THEME_EXTENSION_UID = '01a00e9f-bb02-7b1f-b1ef-c8e7b7934b2b';
+export const DEEP_LINK_APP_ID = APP_CLIENT_ID;
 
 export interface WidgetDef {
   id: string;
@@ -154,25 +164,55 @@ export const WIDGETS: WidgetDef[] = [
   },
 ];
 
+export interface DeepLinkOptions {
+  /** Numeric theme id. Omitted means the published theme. */
+  themeId?: string;
+  /** Template key, e.g. `product` or `page.faq`. Omitted uses the widget's own. */
+  template?: string;
+}
+
 /**
  * Deep link into the theme editor with this widget ready to place.
- *
- * `themes/current` rather than a theme id: resolving the published theme would
- * cost an API call and go stale the moment a merchant publishes another one.
  *
  * The two kinds take different parameters — an app block is ADDED to a
  * template, an app embed is ACTIVATED in theme settings — and using the wrong
  * one opens the editor with nothing selected, which reads as a broken button.
+ *
+ * `target=newAppsSection` rather than `mainSection`. Every JSON template in a
+ * Theme Store theme is required to accept app blocks in its Apps section,
+ * which makes this the one target that cannot be refused; `mainSection` needs
+ * the theme's own product section to declare `{"type": "@app"}`, and when it
+ * does not the editor adds nothing and says "There is a problem with the app
+ * block. Contact the app developer." The merchant drags it where they want it
+ * from there, which the dialog tells them to do.
+ *
+ * `themes/current` when no theme is named: resolving the published theme costs
+ * an API call and goes stale the moment a merchant publishes another one.
  */
-export function themeEditorUrl(shopDomain: string, widget: WidgetDef): string {
+export function themeEditorUrl(
+  shopDomain: string,
+  widget: WidgetDef,
+  opts: DeepLinkOptions = {},
+): string {
   const store = shopDomain.replace(/\.myshopify\.com$/, '');
-  const base = `https://admin.shopify.com/store/${store}/themes/current/editor`;
-  const target = `${THEME_EXTENSION_UID}/${widget.handle}`;
+  const theme = opts.themeId ? encodeURIComponent(opts.themeId) : 'current';
+  const base = `https://admin.shopify.com/store/${store}/themes/${theme}/editor`;
+
+  // Written out rather than built with URLSearchParams, which percent-encodes
+  // the separator in `{id}/{handle}` to %2F. Every documented example carries a
+  // literal slash, and lib/theme-block.ts records that the encoded form fails
+  // to resolve. Nothing here is user input — the id is a module constant and
+  // the handle comes from the table above — so there is no injection surface
+  // that encoding would be protecting.
+  const ref = `${DEEP_LINK_APP_ID}/${widget.handle}`;
 
   if (widget.kind === 'embed') {
-    return `${base}?context=apps&activateAppId=${encodeURIComponent(target)}`;
+    return `${base}?context=apps&activateAppId=${ref}`;
   }
 
-  const template = widget.template ?? 'product';
-  return `${base}?template=${template}&addAppBlockId=${encodeURIComponent(target)}&target=mainSection`;
+  // The template key is the one value that reaches here from outside, picked
+  // from the theme's own file list. Encoded because a template name is not
+  // ours to vouch for.
+  const template = encodeURIComponent(opts.template ?? widget.template ?? 'product');
+  return `${base}?template=${template}&addAppBlockId=${ref}&target=newAppsSection`;
 }
