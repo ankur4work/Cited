@@ -320,7 +320,16 @@ export function AddWidgetModal({
 
     void (async () => {
       try {
-        const idToken = await window.shopify?.idToken?.();
+        // Raced, not awaited. This runs BEFORE the fetch, so the fetch's own
+        // deadline does not cover it — and App Bridge that never answers is
+        // the one remaining way to sit on "Reading your themes…" forever,
+        // which is the failure this dialog has already shown once.
+        const idToken = await Promise.race([
+          window.shopify?.idToken?.(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('the admin frame did not answer')), 10_000),
+          ),
+        ]);
         if (!idToken) throw new Error('not authenticated');
 
         const res = await fetch('/api/widgets/themes', {
