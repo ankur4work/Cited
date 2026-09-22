@@ -16,6 +16,16 @@ import { parseTemplates, type ThemeTemplate } from './templates';
  * placement itself is still the merchant's to make in the theme editor.
  */
 
+/**
+ * Both `first:` values are cost limits, not guesses.
+ *
+ * A GraphQL query is charged roughly its requested connection sizes, and one
+ * over 1000 points is rejected outright rather than throttled — so this is
+ * 20 × (1 + 30) ≈ 620, with room to spare. 20 covers every theme a standard
+ * plan can save. 30 template files is more than a theme normally has; a theme
+ * with more alternates than that loses the tail of the list rather than
+ * failing, which is why the two numbers are stated here together.
+ */
 const THEMES = /* GraphQL */ `
   query CitedThemeTemplates {
     themes(first: 20, roles: [MAIN, UNPUBLISHED, DEVELOPMENT]) {
@@ -23,7 +33,7 @@ const THEMES = /* GraphQL */ `
         id
         name
         role
-        files(filenames: ["templates/*.json"], first: 60) {
+        files(filenames: ["templates/*.json"], first: 30) {
           nodes {
             filename
           }

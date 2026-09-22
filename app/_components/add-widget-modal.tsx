@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Badge,
   Banner,
@@ -293,55 +293,59 @@ export function AddWidgetModal({
   buildUrl: (opts: { themeId: string; template: string }) => string;
 }) {
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  // null = not loaded yet; [] = loaded and there is nothing we can read.
+  // null = still loading; [] = loaded, and there is nothing we can read.
+  //
+  // Loading is this one value rather than a second `loading` flag. It was a
+  // flag, it was in the effect's dependency array, and the effect set it — so
+  // setting it re-ran the effect, React tore the first run down, its cleanup
+  // marked the in-flight request cancelled, and the `finally` that cleared the
+  // flag was itself behind an `if (!cancelled)`. The dialog sat on "Reading
+  // your themes…" forever, every time, for everyone. One source of truth
+  // cannot disagree with itself like that.
   const [themes, setThemes] = useState<ThemeSummary[] | null>(null);
   const [themeId, setThemeId] = useState('');
   const [template, setTemplate] = useState('');
   const [instructions, setInstructions] = useState(false);
+  /** Survives re-renders, so the fetch fires once without being a dependency. */
+  const asked = useRef(false);
 
   const theme = themes?.find((t) => t.id === themeId);
 
-  // Only once per mount. A merchant who opens the dialog, cancels and reopens
-  // is looking at a theme list that cannot have changed in between, and
-  // refetching would put a spinner in front of a dialog they have already read.
+  // Once per mount. A merchant who opens the dialog, cancels and reopens is
+  // looking at a theme list that cannot have changed in between, and refetching
+  // would put a spinner in front of a dialog they have already read.
   useEffect(() => {
-    if (!open || themes !== null || loading) return;
+    if (!open || asked.current) return;
+    asked.current = true;
 
-    let cancelled = false;
-    setLoading(true);
-    (async () => {
+    void (async () => {
       try {
         const idToken = await window.shopify?.idToken?.();
         if (!idToken) throw new Error('not authenticated');
 
         const res = await fetch('/api/widgets/themes', {
           headers: { Authorization: `Bearer ${idToken}` },
+          // Reading twenty themes' file lists is the slowest call this app
+          // makes, and without a deadline a stalled one is indistinguishable
+          // from a broken dialog. Falling back beats spinning.
+          signal: AbortSignal.timeout(20_000),
         });
         if (!res.ok) throw new Error(`could not load themes (${res.status})`);
 
         const body = (await res.json()) as { themes: ThemeSummary[] };
-        if (cancelled) return;
-
         setThemes(body.themes);
+
         const live = body.themes.find((t) => t.live) ?? body.themes[0];
         if (live) setThemeId(live.id);
       } catch (err) {
-        if (cancelled) return;
         // [] puts the dialog into its fallback, which still places the widget.
-        // A toast here would be alarming about something the merchant can
-        // still do.
+        // Every path out of here must set themes — that is what ends the
+        // spinner, and leaving it null is the bug above in another form.
         setThemes([]);
         showToast((err as Error).message, { isError: true });
-      } finally {
-        if (!cancelled) setLoading(false);
       }
     })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [open, themes, loading]);
+  }, [open]);
 
   // Switching theme has to clear the page: template keys are per-theme, and a
   // `page.faq` carried over from the old theme would deep-link to a template
@@ -364,7 +368,7 @@ export function AddWidgetModal({
     setOpen(false);
   }, [theme, template, buildUrl, fallbackUrl]);
 
-  const loaded = themes !== null && !loading;
+  const loaded = themes !== null;
   const noThemes = loaded && themes.length === 0;
   const blocked = Boolean(theme && !theme.supportsAppBlocks);
   const canAdd = noThemes || (Boolean(template) && !blocked);
