@@ -44,6 +44,17 @@ describe('themeEditorUrl', () => {
     expect(url.searchParams.get('target')).toBe('newAppsSection');
   });
 
+  it('can place the block inside the product section instead', () => {
+    // newAppsSection cannot be refused, but the section it creates lands at
+    // the END of the template — so reviews turned up below Related products
+    // rather than below the product. The dialog offers both and defaults to
+    // this one on any template that has a main section.
+    const url = new URL(
+      themeEditorUrl(shop, byId('review-display'), { target: 'mainSection' }),
+    );
+    expect(url.searchParams.get('target')).toBe('mainSection');
+  });
+
   it('activates the embed rather than adding it', () => {
     // An embed is toggled in theme settings, not placed in a template. The
     // wrong parameter opens the editor with nothing selected.

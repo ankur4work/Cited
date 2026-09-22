@@ -107,6 +107,17 @@ export function WidgetsView({
                       </InlineStack>
 
                       {/*
+                        Where it lands, before the prose describing what it is.
+                        Seven drawings with no location told a merchant nothing
+                        about which of them are product-page widgets and which
+                        are not — and, once placed, gave them nowhere to go and
+                        look at the result.
+                      */}
+                      <Text as="p" variant="bodySm" tone="subdued" fontWeight="medium">
+                        {w.where}
+                      </Text>
+
+                      {/*
                         Clamped to three lines. One long description would
                         otherwise set the height of every card in its row,
                         and these are meant to be scanned, not read.
@@ -154,9 +165,7 @@ export function WidgetsView({
                           shopDomain={shopDomain}
                           fallbackUrl={w.addUrl}
                           embedUrl={embed?.addUrl}
-                          buildUrl={({ themeId, template }) =>
-                            themeEditorUrl(shopDomain, w, { themeId, template })
-                          }
+                          buildUrl={(opts) => themeEditorUrl(shopDomain, w, opts)}
                         />
                         {/*
                           Opens on THIS widget's shape. The settings are

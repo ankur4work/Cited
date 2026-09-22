@@ -172,16 +172,30 @@
 
 .cited-rating__row-label { color: var(--cited-muted); white-space: nowrap; }
 
+/*
+ * A filled track, not an outlined box.
+ *
+ * This was a 14px rectangle with a 1px border and no background, so every
+ * rating nobody has given rendered as an empty outlined box next to "0%" — a
+ * product with one 5-star review showed four hollow rectangles, which reads as
+ * four broken widgets rather than as an empty histogram. A bar chart's zero
+ * state is a quiet full-width track; the border was drawing attention to
+ * precisely the rows that have nothing to say.
+ *
+ * Slimmer too: 14px was heavy enough that the empty rows dominated the aside.
+ */
 .cited-rating__track {
-  height: 14px;
-  border: 1px solid var(--cited-hairline);
-  border-radius: 3px;
+  height: 8px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--cited-hairline);
   overflow: hidden;
 }
 
 .cited-rating__fill {
   display: block;
   height: 100%;
+  border-radius: 999px;
   background: var(--cited-star);
 }
 
@@ -524,10 +538,16 @@
  * columns put roughly three times as much above the fold, which is this
  * list's actual job: show that many people bought this and said so.
  *
- * `auto-fill` with a minimum rather than `repeat(3, …)`. The same rule then
- * gives two columns in a narrow theme container and one on a phone, without a
- * media query per breakpoint guessing at widths this block does not control —
- * it is placed inside someone else's layout and cannot know its own width.
+ * A minimum width rather than `repeat(3, …)`. The same rule then gives two
+ * columns in a narrow theme container and one on a phone, without a media
+ * query per breakpoint guessing at widths this block does not control — it is
+ * placed inside someone else's layout and cannot know its own width.
+ *
+ * `auto-fit`, NOT `auto-fill`. auto-fill keeps the empty columns, so a product
+ * with one review rendered a small card marooned beside two thirds of a row of
+ * nothing — which looks far worse than the single column it replaced. auto-fit
+ * collapses the tracks nothing landed in, so one review is one full-width
+ * card, two are halves, and three or more fill the row.
  *
  * `align-items: start` so one long review does not stretch its neighbours to
  * match. A ragged bottom edge is correct here; equal heights would mean
@@ -538,7 +558,7 @@
   margin: calc(var(--cited-gap) * 1.25) 0 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
   align-items: start;
   gap: var(--cited-gap);
 }
@@ -974,20 +994,33 @@
  * button is drawn entirely in currentColor and fills on hover, which is
  * correct against any background the theme happens to use.
  */
+/*
+ * A solid button, full width of the aside.
+ *
+ * It was a transparent pill with a 1.5px border, which at the bottom of a
+ * narrow column read as a disabled control rather than the one action this
+ * block is asking for. Filled, square-ish and the width of its column, it
+ * looks like something to press.
+ *
+ * `Canvas` for the label — the theme's own page colour — so it stays legible
+ * on a dark theme, where hardcoded white text on a dark fill would vanish.
+ */
 .cited-reviews__submit {
   font: inherit;
   font-weight: 600;
-  justify-self: start;
-  padding: 12px 24px;
-  border: 1.5px solid currentColor;
-  border-radius: 999px;
-  background: transparent;
-  color: inherit;
+  display: block;
+  width: 100%;
+  text-align: center;
+  padding: 13px 20px;
+  border: 0;
+  border-radius: var(--cited-radius);
+  background: var(--cited-text);
+  color: Canvas;
   cursor: pointer;
   line-height: 1.2;
 }
 
-.cited-reviews__submit:hover { background: var(--cited-hairline); }
+.cited-reviews__submit:hover { opacity: 0.88; }
 
 .cited-reviews__submit:focus-visible {
   outline: 2px solid currentColor;
@@ -1500,7 +1533,9 @@
 
 .cited-reviews .cited-store__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  /* auto-fit for the same reason as the product list: one store review must
+   * not sit in a narrow box beside two empty columns. */
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
   align-items: start;
   gap: var(--cited-gap);
   margin: 0;

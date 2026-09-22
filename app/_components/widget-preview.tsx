@@ -223,25 +223,104 @@ export function WidgetPreview({ id, s }: { id: string; s: WidgetSettings }) {
 
     // The full list under a product, and the default for anything unrecognised
     // — a new widget id should draw something honest rather than nothing.
+    //
+    // Redrawn to match what the block actually renders. It showed a stacked
+    // list with a small inline "4.8 ★★★★★ 128 reviews" line, which is what the
+    // block looked like BEFORE the storefront redesign — so a merchant
+    // comparing this card to their own product page saw two different widgets
+    // and had no reason to trust either.
     case 'review-display':
     default:
       return (
         <Frame s={s}>
-          <div style={{ fontWeight: 600, marginBottom: 6 }}>{s.heading}</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-            <strong>4.8</strong>
-            <Stars n={5} s={s} />
-            <span style={muted(s)}>128 reviews</span>
-          </div>
-          {[a, b].map((r) => (
-            <div key={r.author} style={{ marginBottom: 6 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <Stars n={r.rating} s={s} size={10} />
-                <strong style={{ fontSize: 11 }}>{r.title}</strong>
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>{s.heading}</div>
+          <div style={{ display: 'flex', gap: 12 }}>
+            {/* The score as a headline, and the histogram under it. */}
+            <div style={{ flex: '0 0 68px', textAlign: 'center' }}>
+              <div style={{ fontSize: 24, fontWeight: 700, lineHeight: 1 }}>4.8</div>
+              <div style={{ marginTop: 3 }}>
+                <Stars n={5} s={s} size={10} />
               </div>
-              <div style={{ ...muted(s), marginTop: 1 }}>{r.body.slice(0, 50)}…</div>
+              <div style={{ ...muted(s), marginTop: 2, fontSize: 10 }}>128 Reviews</div>
+              <div style={{ marginTop: 6, display: 'grid', gap: 3 }}>
+                {[80, 20, 0, 0].map((pct, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                    <span style={{ ...muted(s), fontSize: 9, width: 6 }}>{5 - i}</span>
+                    {/* A filled track even at 0% — the empty outlined boxes this
+                      * replaced read as four broken widgets, not an empty row. */}
+                    <span
+                      style={{
+                        flex: 1,
+                        height: 4,
+                        borderRadius: 999,
+                        background: s.borderColor,
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <span
+                        style={{
+                          display: 'block',
+                          width: `${pct}%`,
+                          height: '100%',
+                          background: s.starColor,
+                        }}
+                      />
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
-          ))}
+
+            {/* Filter chips and the card grid, which is the shape that changed. */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
+                <span
+                  style={{
+                    padding: '2px 8px',
+                    borderRadius: 999,
+                    background: s.textColor,
+                    color: '#FFFFFF',
+                    fontSize: 9,
+                  }}
+                >
+                  All
+                </span>
+                <span
+                  style={{
+                    padding: '2px 8px',
+                    borderRadius: 999,
+                    border: `1px solid ${s.borderColor}`,
+                    fontSize: 9,
+                  }}
+                >
+                  With photos
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {[a, b].map((r) => (
+                  <div
+                    key={r.author}
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      border: `1px solid ${s.borderColor}`,
+                      borderRadius: Math.min(s.cornerRadius, 10),
+                      padding: 7,
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, fontSize: 11 }}>{r.author}</div>
+                    <div style={{ marginTop: 3 }}>
+                      <Stars n={r.rating} s={s} size={10} />
+                    </div>
+                    <div style={{ fontWeight: 600, fontSize: 10, marginTop: 3 }}>{r.title}</div>
+                    <div style={{ ...muted(s), marginTop: 2, fontSize: 10, lineHeight: 1.4 }}>
+                      {r.body.slice(0, 38)}…
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         </Frame>
       );
   }

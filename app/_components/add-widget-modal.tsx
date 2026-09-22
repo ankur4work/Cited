@@ -31,7 +31,7 @@ import {
   SearchIcon,
   ThemeTemplateIcon,
 } from '@shopify/polaris-icons';
-import type { WidgetDef } from '@/lib/shopify/widgets';
+import type { DeepLinkTarget, WidgetDef } from '@/lib/shopify/widgets';
 import type { ThemeSummary } from '@/lib/shopify/themes';
 import { suggestTemplate, type TemplateIcon } from '@/lib/shopify/templates';
 import { showToast } from './toast';
@@ -290,7 +290,7 @@ export function AddWidgetModal({
   fallbackUrl: string;
   embedUrl?: string;
   /** Injected so the URL is built by the same function the tests cover. */
-  buildUrl: (opts: { themeId: string; template: string }) => string;
+  buildUrl: (opts: { themeId: string; template: string; target: DeepLinkTarget }) => string;
 }) {
   const [open, setOpen] = useState(false);
   // null = still loading; [] = loaded, and there is nothing we can read.
@@ -305,6 +305,12 @@ export function AddWidgetModal({
   const [themes, setThemes] = useState<ThemeSummary[] | null>(null);
   const [themeId, setThemeId] = useState('');
   const [template, setTemplate] = useState('');
+  /*
+   * Inside the product section by default. That is where reviews belong, and
+   * the alternative — a new section, which no theme can refuse — puts them at
+   * the very bottom of the template, under Related products.
+   */
+  const [target, setTarget] = useState<DeepLinkTarget>('mainSection');
   const [instructions, setInstructions] = useState(false);
   /** Survives re-renders, so the fetch fires once without being a dependency. */
   const asked = useRef(false);
@@ -371,11 +377,14 @@ export function AddWidgetModal({
     ? suggestTemplate(theme.templates, widget.template ?? 'product')?.key
     : undefined;
 
+  const picked = theme?.templates.find((t) => t.key === template);
+
   const go = useCallback(() => {
-    const url = theme && template ? buildUrl({ themeId: theme.id, template }) : fallbackUrl;
+    const url =
+      theme && template ? buildUrl({ themeId: theme.id, template, target }) : fallbackUrl;
     window.open(url, '_blank', 'noopener,noreferrer');
     setOpen(false);
-  }, [theme, template, buildUrl, fallbackUrl]);
+  }, [theme, template, target, buildUrl, fallbackUrl]);
 
   const loaded = themes !== null;
   const noThemes = loaded && themes.length === 0;
@@ -441,6 +450,33 @@ export function AddWidgetModal({
                       value={template}
                       onChange={setTemplate}
                       suggested={suggested}
+                    />
+                  )}
+
+                  {/*
+                    Where in the page, not just which page.
+                    `newAppsSection` was hardcoded because it is the target no
+                    theme can refuse — but the section it creates lands at the
+                    END of the template, so reviews appeared below Related
+                    products instead of below the product. That is the correct
+                    default for a home page and the wrong one for a product,
+                    and it is a choice the merchant should get to make rather
+                    than discover.
+                  */}
+                  {picked && picked.base !== 'index' && (
+                    <Select
+                      label="Where on the page"
+                      options={[
+                        { label: 'Inside the main section, with the product', value: 'mainSection' },
+                        { label: 'As a new section at the end of the page', value: 'newAppsSection' },
+                      ]}
+                      value={target}
+                      onChange={(v) => setTarget(v as DeepLinkTarget)}
+                      helpText={
+                        target === 'mainSection'
+                          ? 'Lands directly under the product. A few themes don’t allow this — if the editor says there is a problem with the app block, choose the other option.'
+                          : 'Always works, but the new section lands at the bottom of the page. You can drag it up in the editor.'
+                      }
                     />
                   )}
                 </>
