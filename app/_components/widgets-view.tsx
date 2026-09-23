@@ -18,7 +18,7 @@ import { themeEditorUrl, type WidgetDef } from '@/lib/shopify/widgets';
 import type { WidgetSettings } from '@/lib/widgets/settings';
 import { AddWidgetModal } from './add-widget-modal';
 import { WidgetCustomizer } from './widget-customizer';
-import { WidgetPreview } from './widget-preview';
+import { WidgetPlacement } from './widget-placement';
 
 export interface WidgetCard extends WidgetDef {
   addUrl: string;
@@ -93,11 +93,17 @@ export function WidgetsView({
                   <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                     <BlockStack gap="300">
                       {/*
-                        Above the name, not below the prose. The picture is
-                        what a merchant scans a grid of seven widgets by; the
-                        description is what they read once one has caught them.
+                        A floor plan, not a thumbnail.
+
+                        This was a zoomed-in drawing of the widget, which
+                        answers "what does it look like" and leaves the
+                        question a merchant actually has — where does it go,
+                        and where is my product in relation to it — completely
+                        unanswered. The appearance preview still exists; it
+                        lives in the customiser, where colours are the thing
+                        being chosen.
                       */}
-                      <WidgetPreview id={w.id} s={settings} />
+                      <WidgetPlacement id={w.id} />
 
                       <InlineStack gap="200" blockAlign="center">
                         <Text as="h3" variant="headingSm">
