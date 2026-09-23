@@ -194,6 +194,28 @@
     assign gallery = gallery_raw | split: '|'
   endif
 
+  # How many cards this page actually renders, bucketed to 1, 2 or many.
+  #
+  # `auto-fit` collapses the tracks nothing lands in, so it never leaves an
+  # empty column — but with one review it hands that single card the entire
+  # width, and a 70rem-wide review card is its own kind of broken. The count
+  # is known here, so the layout does not have to infer it: one card gets a
+  # readable maximum, two share the row, three or more flow.
+  assign shown_count = 0
+  if reviews_list != blank
+    assign shown_count = reviews_list.size
+    if shown_count > per_page
+      assign shown_count = per_page
+    endif
+  endif
+
+  assign list_bucket = 'many'
+  if shown_count == 1
+    assign list_bucket = 'one'
+  elsif shown_count == 2
+    assign list_bucket = 'two'
+  endif
+
   # The store-wide digest, for the second tab. Absent until the worker has
   # published one, which is why the tab bar below is conditional rather than
   # assumed — a tab that opens an empty panel is worse than one tab.
@@ -382,72 +404,103 @@
     the whole thing to a single centred column for that case.
   {%- endcomment -%}
   <div class="cited-reviews__layout{% unless has_reviews %} cited-reviews__layout--blank{% endunless %}">
-    <aside class="cited-reviews__aside">
-      {%- if has_reviews -%}
-        {%- comment -%}
-          The score as a headline, not a sentence.
+    <div class="cited-reviews__main">
 
-          This was "4.8 out of 5" at body size with the stars beside it, which
-          is a fact stated rather than a verdict shown — a shopper scanning a
-          product page skims past it. The number carries the decision, so it
-          gets the size, and "out of 5" is dropped: the five stars underneath
-          say it without a word.
-        {%- endcomment -%}
-        <div class="cited-hero">
-          <span class="cited-hero__score">{{ rating_avg | round: 1 }}</span>
-          <span class="cited-hero__stars">
-            {%- render 'cited-stars', rating: rating_avg, scale_max: scale_max, size: 20 -%}
-          </span>
-          <span class="cited-hero__count">
-            {{ rating_count }} Review{% unless rating_count == 1 %}s{% endunless %}
-          </span>
-        </div>
+  {%- comment -%}
+    ── Summary: one line, not a column ──
 
-        {%- render 'cited-breakdown', breakdown: rating_breakdown, total: rating_count, scale_max: scale_max -%}
-      {%- else -%}
-        <div class="cited-reviews__empty">
-          <p>{{ empty_text | escape }}</p>
-        </div>
+    This was a 3rem score over a full histogram in a fixed 14–18rem aside,
+    beside the reviews. Two things were wrong with that and both are
+    structural rather than cosmetic.
+
+    It pushed the reviews themselves below the fold of wherever the merchant
+    put the block — the aggregate is context, and it was taking the space the
+    evidence needed. And a fixed track cannot survive an unknown container:
+    dropped in a product column it kept its 14rem while the review grid got
+    what was left, which is how one review ended up marooned in a narrow strip
+    beside half a page of nothing.
+
+    A single line costs one row at any width, and the histogram becomes a
+    disclosure for the shopper who wants it. Nothing is lost — the breakdown
+    is still in the server's HTML, so it is still read by crawlers.
+  {%- endcomment -%}
+  {%- if has_reviews -%}
+    <div class="cited-summary-bar">
+      <p class="cited-summary-bar__score">
+        {%- render 'cited-stars', rating: rating_avg, scale_max: scale_max, size: 16 -%}
+        <strong class="cited-summary-bar__avg">{{ rating_avg | round: 1 }}</strong>
+        <span class="cited-summary-bar__count">
+          {{ rating_count }} review{% unless rating_count == 1 %}s{% endunless %}
+        </span>
+      </p>
+
+      {%- if rating_breakdown != blank -%}
+        <details class="cited-menu cited-summary-bar__more">
+          <summary class="cited-chip cited-chip--menu">
+            Rating breakdown
+            <svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true" focusable="false">
+              <path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </summary>
+          <div class="cited-menu__panel cited-menu__panel--wide">
+            {%- render 'cited-breakdown', breakdown: rating_breakdown, total: rating_count, scale_max: scale_max -%}
+          </div>
+        </details>
       {%- endif -%}
 
       {%- comment -%}
-        ── Review this product ──
-
         Signed out, this is a LINK to the login page rather than a form that
         rejects you after you have typed. Reviews require an account — a
-        signed-out submission is an unverifiable claim, which makes
-        "verified purchase" meaningless and one-review-per-customer
-        unenforceable — so the account step is unavoidable, and the honest
-        thing is to say so before the shopper invests any effort.
+        signed-out submission is unverifiable, which makes "verified purchase"
+        meaningless — so the account step is unavoidable and saying so first is
+        the honest order. `routes.account_login_url`, never a literal
+        /account/login: that path 404s on new customer accounts and drops a
+        shopper into the wrong locale on a translated store.
 
-        `return_url` brings them back to this product afterwards.
-        `routes.account_login_url`, never a hardcoded /account/login: the path
-        differs on stores using new customer accounts and on any store with a
-        locale prefix, where the literal path 404s or drops the shopper into
-        the wrong locale.
-
-        Signed in, it is a `details` that reveals the form in place. No
-        JavaScript, no navigation, and the form is still a plain POST if the
-        disclosure is opened with scripting off.
+        Signed in, it jumps to the write form further down, which is a
+        `details` the shopper opens themselves.
       {%- endcomment -%}
       {%- if enable_form -%}
-        <div class="cited-reviews__cta">
-          <p class="cited-reviews__cta-title">Review this product</p>
-          <p class="cited-reviews__cta-sub">Share your thoughts with other customers</p>
-
-          {%- unless customer -%}
-            <a
-              class="cited-reviews__submit cited-reviews__cta-button"
-              href="{{ routes.account_login_url }}?return_url={{ product.url | url_encode }}"
-            >
-              {{ form_button | escape }}
-            </a>
-          {%- endunless -%}
-        </div>
+        <a
+          class="cited-reviews__write"
+          {% if customer %}
+            href="#cited-write-{{ uid }}"
+          {% else %}
+            href="{{ routes.account_login_url }}?return_url={{ product.url | url_encode }}"
+          {% endif %}
+        >
+          {{ form_button | escape }}
+        </a>
       {%- endif -%}
-    </aside>
+    </div>
+  {%- else -%}
+    {%- comment -%}
+      ── Empty state, as a designed state ──
 
-    <div class="cited-reviews__main">
+      Every product on a new install is in this state, so it is the first thing
+      a merchant sees after placing the block — and it used to be the aside's
+      dashed box stranded in a narrow track. One centred column, the stars
+      shown empty so the shape of what is coming is legible, and the
+      invitation as the only action on offer.
+    {%- endcomment -%}
+    <div class="cited-blank">
+      {%- render 'cited-stars', rating: 0, scale_max: scale_max, size: 20 -%}
+      <p class="cited-blank__title">{{ empty_text | escape }}</p>
+      {%- if enable_form -%}
+        <p class="cited-blank__sub">Be the first to share your experience with this product.</p>
+        <a
+          class="cited-reviews__write"
+          {% if customer %}
+            href="#cited-write-{{ uid }}"
+          {% else %}
+            href="{{ routes.account_login_url }}?return_url={{ product.url | url_encode }}"
+          {% endif %}
+        >
+          {{ form_button | escape }}
+        </a>
+      {%- endif -%}
+    </div>
+  {%- endif -%}
 
   {%- comment -%}
     ── Images from reviews ──
@@ -581,7 +634,7 @@
     SEO and AI ingestion, so crawlability never depends on JS.
   {%- endcomment -%}
   {%- if reviews_list != blank -%}
-    <ol class="cited-reviews__list" role="list">
+    <ol class="cited-reviews__list cited-reviews__list--{{ list_bucket }}" role="list">
       {%- for review in reviews_list limit: per_page -%}
         {%- liquid
           assign r_rating = 0
@@ -628,35 +681,19 @@
           style="--cited-rank-high: {{ 5 | minus: r_int }}; --cited-rank-low: {{ r_int }};"
         >
           {%- comment -%}
-            Reading order is person → verdict → provenance → detail, which is
-            how a shopper actually interrogates a review: who said this, what
-            did they conclude, can I trust it, and only then the argument.
-            Stars used to lead and the reviewer's name sat underneath, which
-            reads as a rating that happens to have a person attached.
-          {%- endcomment -%}
-          {%- comment -%}
-            Name and date on one line, the date pushed to the right. In a
-            single-column list the date could sit under the stars with
-            everything else; in a grid of cards that stacks the same four
-            facts three times across, a right-aligned date is what gives each
-            card an edge to read against.
-          {%- endcomment -%}
-          <div class="cited-review__who">
-            <span class="cited-review__author">{{ r_author | escape }}</span>
-            {%- if review.submitted_at != blank -%}
-              <time class="cited-review__date" datetime="{{ review.submitted_at | date: '%Y-%m-%d' }}">
-                {%- comment -%}
-                  An explicit strftime, not `format: 'date'`. The named
-                  formats are read from the THEME's locale file, and a theme
-                  that does not define `date_formats.date` — most do not —
-                  makes the filter a no-op that prints the raw stored value.
-                  Shoppers were being shown "2026-08-19T20:55:28Z".
-                {%- endcomment -%}
-                Review on {{ review.submitted_at | date: '%d %b %Y' }}
-              </time>
-            {%- endif -%}
-          </div>
+            Reading order: verdict → headline → argument → evidence → who said
+            it → whether they bought it → when.
 
+            The rating leads because it is the one fact every card has and the
+            one a shopper sorts on by eye; the person arrives at the end, where
+            "and this was a verified buyer, last month" is the thing that
+            settles it. The previous order opened with a name and a date — the
+            two facts a stranger's name tells you least — and a grid of those
+            reads as a list of people rather than a body of evidence.
+
+            The identity block is a footer, so it sits below content of
+            unpredictable length and every card still ends the same way.
+          {%- endcomment -%}
           <div class="cited-review__head">
             {%- render 'cited-stars', rating: r_rating, scale_max: scale_max, size: 15 -%}
           </div>
@@ -664,41 +701,6 @@
           {%- if review.title != blank -%}
             <h3 class="cited-review__title">{{ review.title | escape }}</h3>
           {%- endif -%}
-
-          <div class="cited-review__meta">
-            {%- comment -%}
-              This is OUR order-match badge. It is deliberately NOT, and must
-              never resemble, the "Verified by Shop" badge.
-
-              Shopify's rule for approved review apps: use only the official
-              badge assets it provides, and "do not modify, recreate, or alter
-              the badge in any way." The two marks also mean different things —
-              "Verified by Shop" is Shopify attesting via the Shop app, while
-              this says only that Cited matched the reviewer to an order for
-              this product on this store.
-
-              So it is kept distinct on every axis a reviewer would check:
-                * mark    — a bag outline, not a checkmark. A check inside a
-                            circle is the shape people read as Shopify's.
-                * colour  — green, distinct from all three official variants
-                            (purple, black, grey).
-                * wording — names the store, not Shop.
-            {%- endcomment -%}
-            {%- if r_verified -%}
-              <span class="cited-review__verified" title="Cited matched this reviewer to an order on this store">
-                <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
-                  <path
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.4"
-                    stroke-linejoin="round"
-                    d="M3.4 5.6h9.2l-.8 7.3a1 1 0 0 1-1 .9H5.2a1 1 0 0 1-1-.9zM6 5.6V4.3a2 2 0 0 1 4 0v1.3"
-                  />
-                </svg>
-                Verified purchase
-              </span>
-            {%- endif -%}
-          </div>
 
           {%- if review.body != blank -%}
             <div class="cited-review__body">{{ review.body | escape | newline_to_br }}</div>
@@ -763,6 +765,62 @@
               {%- endfor -%}
             </div>
           {%- endif -%}
+
+          {%- comment -%}
+            Who said it, and whether they bought it — a footer, not a header.
+            It sits after content of unpredictable length so every card in a
+            row still ends the same way, and `margin-top: auto` in the CSS
+            pins it to the bottom of a card that is shorter than its
+            neighbours.
+          {%- endcomment -%}
+          <footer class="cited-review__meta">
+            <span class="cited-review__author">{{ r_author | escape }}</span>
+            {%- comment -%}
+              This is OUR order-match badge. It is deliberately NOT, and must
+              never resemble, the "Verified by Shop" badge.
+
+              Shopify's rule for approved review apps: use only the official
+              badge assets it provides, and "do not modify, recreate, or alter
+              the badge in any way." The two marks also mean different things —
+              "Verified by Shop" is Shopify attesting via the Shop app, while
+              this says only that Cited matched the reviewer to an order for
+              this product on this store.
+
+              So it is kept distinct on every axis a reviewer would check:
+                * mark    — a bag outline, not a checkmark. A check inside a
+                            circle is the shape people read as Shopify's.
+                * colour  — green, distinct from all three official variants
+                            (purple, black, grey).
+                * wording — names the store, not Shop.
+            {%- endcomment -%}
+            {%- if r_verified -%}
+              <span class="cited-review__verified" title="Cited matched this reviewer to an order on this store">
+                <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
+                  <path
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linejoin="round"
+                    d="M3.4 5.6h9.2l-.8 7.3a1 1 0 0 1-1 .9H5.2a1 1 0 0 1-1-.9zM6 5.6V4.3a2 2 0 0 1 4 0v1.3"
+                  />
+                </svg>
+                Verified purchase
+              </span>
+            {%- endif -%}
+
+            {%- if review.submitted_at != blank -%}
+              <time class="cited-review__date" datetime="{{ review.submitted_at | date: '%Y-%m-%d' }}">
+                {%- comment -%}
+                  An explicit strftime, not `format: 'date'`. Named formats
+                  resolve against the THEME's locale file, and a theme that
+                  does not define `date_formats.date` — most do not — makes
+                  the filter a no-op that prints the raw stored value.
+                  Shoppers were being shown "2026-08-19T20:55:28Z".
+                {%- endcomment -%}
+                {{ review.submitted_at | date: '%d %B %Y' }}
+              </time>
+            {%- endif -%}
+          </footer>
 
           {%- if review.merchant_reply != blank -%}
             <div class="cited-review__reply">

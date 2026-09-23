@@ -97,7 +97,10 @@
  * are in the server's HTML either way, which is what crawlers and a
  * scripting-off visitor read.
  */
-[data-cited-summary] { display: none; }
+/* Scoped. Unqualified, this was the one selector in the file that could match
+ * an element outside the widget — `[data-cited-summary]` anywhere on the page
+ * would have been hidden by us. */
+.cited-reviews [data-cited-summary] { display: none; }
 
 /*
  * Set by the placement script once this is sitting in the theme's own markup,
@@ -1637,5 +1640,275 @@
     .cited-reviews .cited-hero__score { font-size: 2.5rem; }
     .cited-reviews .cited-gallery__link img { width: 92px; height: 116px; }
     .cited-reviews .cited-toolbar { justify-content: flex-start; }
+  }
+}
+
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+ * Container-aware layout
+ *
+ * The block is dropped into an unknown container in an unknown theme. It gets
+ * told nothing about its width and must not ask the viewport, which is a
+ * different number entirely â€” a product column is 420px while the window is
+ * 1440px, and every viewport media query in here was answering the wrong
+ * question.
+ *
+ * Everything below measures the block. The rules are ordered narrowest-last so
+ * the tighter layout wins, and the viewport fallbacks live at the bottom for
+ * browsers without container query support.
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+
+/*
+ * Parent width wins, always.
+ *
+ * `max-width` caps how wide the content gets in an enormous container without
+ * ever forcing the block wider than its parent â€” a fixed width or a vw unit
+ * would escape the container and push the page sideways.
+ */
+.cited-reviews {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.cited-reviews__layout { max-width: 74rem; }
+
+/* The scoped reset. Three declarations, every one of them inside our own
+ * class, so nothing here can reach a theme's headings, buttons or inputs. */
+.cited-reviews *,
+.cited-reviews *::before,
+.cited-reviews *::after { box-sizing: border-box; }
+
+/* A grid or flex child refuses to shrink below its content by default, which
+ * is the single most common cause of a card pushing past its container. */
+.cited-reviews__main,
+.cited-reviews__list > li,
+.cited-store__grid > li { min-width: 0; }
+
+/* â”€â”€ Summary bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+.cited-reviews .cited-summary-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin-bottom: var(--cited-gap);
+}
+
+.cited-reviews .cited-summary-bar__score {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  flex-wrap: wrap;
+}
+
+.cited-reviews .cited-summary-bar__avg {
+  font-size: 1.125rem;
+  font-weight: 700;
+  /* 4.8 and 5.0 must occupy the same width or the line shifts on update. */
+  font-variant-numeric: tabular-nums;
+}
+
+.cited-reviews .cited-summary-bar__count {
+  font-size: 0.875rem;
+  color: var(--cited-muted);
+}
+
+/* Pushed to the far end of the row, and first to wrap when there is no room. */
+.cited-reviews .cited-reviews__write {
+  margin-left: auto;
+  display: inline-block;
+  padding: 9px 18px;
+  border-radius: var(--cited-radius);
+  background: var(--cited-text);
+  color: Canvas;
+  font-weight: 600;
+  font-size: 0.875rem;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.cited-reviews .cited-reviews__write:hover { opacity: 0.88; }
+.cited-reviews .cited-reviews__write:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.cited-reviews .cited-menu__panel--wide { min-width: 16rem; }
+
+/* â”€â”€ Empty state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+.cited-reviews .cited-blank {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+  /* Capped at a readable measure and centred, so it is balanced in a 1200px
+   * section and still fits a 300px drawer. */
+  max-width: 30rem;
+  margin-inline: auto;
+  padding: calc(var(--cited-gap) * 1.75) var(--cited-gap);
+}
+
+.cited-reviews .cited-blank__title {
+  margin: 4px 0 0;
+  font-size: 1.0625rem;
+  font-weight: 600;
+}
+
+.cited-reviews .cited-blank__sub {
+  margin: 0;
+  font-size: 0.9125rem;
+  color: var(--cited-muted);
+  text-wrap: pretty;
+}
+
+.cited-reviews .cited-blank .cited-reviews__write { margin: 8px 0 0; }
+
+/* â”€â”€ Review grid, by count and by container â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+/*
+ * The count comes from Liquid rather than being inferred.
+ *
+ * `auto-fit` already collapses tracks nothing lands in, so empty columns were
+ * never the problem â€” the problem is the opposite: with one review it hands
+ * that card the full width, and a 70rem-wide review card is its own kind of
+ * broken. One card gets a readable maximum and centres; two share the row;
+ * three or more flow into as many columns as fit.
+ */
+.cited-reviews__list--one { grid-template-columns: minmax(0, 38rem); justify-content: center; }
+.cited-reviews__list--two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+/* â”€â”€ Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+/*
+ * A column, so the footer can be pinned to the bottom. Cards in a row are
+ * `align-items: start`, so they are their own height â€” but a card whose body
+ * is one line still puts its author on the same baseline as the card beside
+ * it when both are stretched by media.
+ */
+.cited-review {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/*
+ * Unpredictable content, guaranteed not to overflow.
+ *
+ * `anywhere` rather than `break-word`: a 60-character URL or an unbroken
+ * German compound has no break opportunity at all, and `break-word` leaves it
+ * to push the card open. This is the one place the stricter rule is correct,
+ * because the alternative is a broken layout rather than an ugly line.
+ */
+.cited-review__title,
+.cited-review__body,
+.cited-review__author,
+.cited-blank__title {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.cited-review__title { text-wrap: pretty; }
+
+/* The identity footer, pinned below content of any length. */
+.cited-review__meta {
+  margin-top: auto;
+  padding-top: 10px;
+  gap: 6px 10px;
+}
+
+.cited-review__body + .cited-review__meta,
+.cited-review__media + .cited-review__meta { margin-top: 12px; }
+
+.cited-review__author {
+  font-weight: 600;
+  color: var(--cited-text);
+  font-size: 0.875rem;
+  /* Long names truncate rather than wrapping the badge onto its own line. */
+  max-width: 100%;
+}
+
+/* â”€â”€ Media â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+/*
+ * No reserved space. A card whose review has no media renders no media
+ * container at all, so nothing leaves a blank slot â€” and `aspect-ratio` with
+ * explicit width/height on the img means the row reserves its own height
+ * before the image loads rather than shifting the page when it arrives.
+ */
+.cited-review__media:empty { display: none; }
+
+.cited-reviews img,
+.cited-reviews video {
+  max-width: 100%;
+  height: auto;
+}
+
+/* â”€â”€ Container breakpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+/* Medium: two columns at most, whatever the review count. */
+@container cited (max-width: 46rem) {
+  .cited-reviews__list--many { grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr)); }
+  .cited-reviews__layout { max-width: none; }
+}
+
+/* Narrow: one column, and the controls stack instead of wrapping badly. */
+@container cited (max-width: 30rem) {
+  .cited-reviews__list,
+  .cited-reviews__list--one,
+  .cited-reviews__list--two,
+  .cited-reviews__list--many,
+  .cited-store__grid { grid-template-columns: minmax(0, 1fr); }
+
+  .cited-reviews .cited-summary-bar { gap: 8px; }
+  /* Full width on its own row rather than a nowrap pill squeezing the score
+   * line into two. */
+  .cited-reviews .cited-reviews__write {
+    margin-left: 0;
+    width: 100%;
+    text-align: center;
+  }
+
+  .cited-reviews .cited-toolbar { flex-direction: column; align-items: stretch; }
+  .cited-reviews .cited-sort { justify-content: space-between; }
+
+  /* Four thumbnails across a 280px card is a 60px tile; two is legible. */
+  .cited-review__media { grid-template-columns: repeat(2, 1fr); }
+  .cited-review__media-item--video { grid-column: span 2; }
+}
+
+/*
+ * Viewport fallback, for browsers without container queries. Less accurate by
+ * definition â€” it cannot see the block's real width â€” but it is the behaviour
+ * this file had before, so nothing regresses on an older browser.
+ */
+@supports not (container-type: inline-size) {
+  @media (max-width: 749px) {
+    .cited-reviews__list,
+    .cited-reviews__list--one,
+    .cited-reviews__list--two,
+    .cited-reviews__list--many,
+    .cited-store__grid { grid-template-columns: minmax(0, 1fr); }
+    .cited-reviews .cited-reviews__write { margin-left: 0; width: 100%; text-align: center; }
+    .cited-reviews .cited-toolbar { flex-direction: column; align-items: stretch; }
+  }
+}
+
+/* â”€â”€ Touch targets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+/*
+ * 36px minimum on anything tappable. The chips were 30px tall, which is under
+ * every published guideline and is the difference between a filter a thumb can
+ * use and one it keeps missing.
+ */
+@media (pointer: coarse) {
+  .cited-reviews .cited-chip,
+  .cited-reviews .cited-menu__item,
+  .cited-reviews .cited-tabs__tab {
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
   }
 }
