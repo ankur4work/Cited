@@ -375,7 +375,13 @@
     duplicate of it: it is the only rating display left here once that move has
     happened.
   {%- endcomment -%}
-  <div class="cited-reviews__layout">
+  {%- comment -%}
+    With no reviews there is nothing for the right-hand column to hold, so the
+    two-column grid left a 14rem aside stranded against an empty half-page —
+    "No reviews yet." broke one word per line inside it. The modifier collapses
+    the whole thing to a single centred column for that case.
+  {%- endcomment -%}
+  <div class="cited-reviews__layout{% unless has_reviews %} cited-reviews__layout--blank{% endunless %}">
     <aside class="cited-reviews__aside">
       {%- if has_reviews -%}
         {%- comment -%}

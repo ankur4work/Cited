@@ -254,6 +254,39 @@
 
 .cited-reviews__aside { display: grid; gap: 6px; }
 
+/*
+ * The empty state, which is most product pages on a new install.
+ *
+ * A two-column grid with nothing in the second column is not an empty state,
+ * it is a layout bug: the aside kept its 14rem track on a full-width section,
+ * so "No reviews yet. Be the first to share your thoughts." wrapped one word
+ * per line in a narrow strip with half a page of nothing beside it — which is
+ * the first thing a merchant sees after placing the block, and it looked
+ * broken because it was.
+ *
+ * One centred column, capped at a readable measure. The invitation to write
+ * the first review is the only thing on the page, so it gets the middle of it.
+ */
+.cited-reviews__layout--blank {
+  grid-template-columns: 1fr;
+  max-width: 32rem;
+  margin-inline: auto;
+  text-align: center;
+}
+
+.cited-reviews__layout--blank .cited-reviews__cta {
+  border-top: 0;
+  padding-top: 0;
+}
+
+/* The button was full-width by design in a narrow aside; centred in a 32rem
+ * column it would be a 32rem slab, so here it shrinks to its content. */
+.cited-reviews__layout--blank .cited-reviews__submit {
+  display: inline-block;
+  width: auto;
+  min-width: 14rem;
+}
+
 .cited-reviews__score {
   display: flex;
   align-items: center;
