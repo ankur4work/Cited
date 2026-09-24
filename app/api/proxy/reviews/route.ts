@@ -400,6 +400,28 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Caught here rather than in createReview so the shopper is told what to do
+  // instead of what the validator thinks. `Rating must be an integer from 1
+  // to 5` is a developer's sentence about a NaN; a shopper who submitted
+  // without picking a star needs to be told to pick a star.
+  //
+  // NaN specifically, not out-of-range: an absent field parses to NaN, which
+  // is the only way this can happen from our own form.
+  if (!Number.isFinite(fields.rating)) {
+    logger.info(
+      { shop: store.shopDomain, hasBody: Boolean(fields.body), hasTitle: Boolean(fields.title) },
+      'Review submitted with no rating',
+    );
+    return wantsJson
+      ? NextResponse.json({ error: 'Please choose a star rating.' }, { status: 400 })
+      : liquidResponse(
+          400,
+          'Choose a rating',
+          'Please pick a star rating before sending your review. Your review has not been lost — use the back button and it will still be there.',
+          fields.returnPath,
+        );
+  }
+
   try {
     const review = await createReview({
       storeId: store.id,

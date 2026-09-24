@@ -2158,3 +2158,73 @@
 .cited-reviews .cited-rate__label svg { width: 2em; height: 2em; }
 
 .cited-reviews .cited-reviews__submit { font-size: 1em; padding: 0.8em 1.4em; }
+
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+ * The rating radio has to be a real, focusable control
+ *
+ * It was hidden with `clip: rect(0 0 0 0)`, the standard screen-reader-only
+ * recipe. That recipe is correct for text, and wrong for a REQUIRED form
+ * control: Chrome refuses to focus a clipped element, so when the group is
+ * empty it cannot show "Please select one of these options" â€” it logs "An
+ * invalid form control with name='rating' is not focusable" and the submission
+ * either dies silently or goes out without a rating. Either way the shopper
+ * gets no message from their own browser, which is the one that should have
+ * caught it before a round trip.
+ *
+ * Laid over its own star instead: full size, zero opacity, and on top. It is
+ * genuinely rendered, genuinely focusable and genuinely clickable, so native
+ * validation works, the constraint message appears next to the stars, and
+ * keyboard users can arrow through the group as they always could.
+ *
+ * The label stays the visible target and keeps `for`, so nothing about the
+ * sibling selectors that drive the lit state changes.
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+
+.cited-reviews .cited-rate__stars { position: relative; }
+
+.cited-reviews .cited-rate__input {
+  position: absolute;
+  /* Overrides the clip recipe above â€” same declarations, later in the file. */
+  clip: auto;
+  clip-path: none;
+  width: 2em;
+  height: 2em;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+  /* Above the label it belongs to, so the click lands on the input itself
+   * rather than depending on label forwarding. */
+  z-index: 1;
+}
+
+/*
+ * Each input sits on its own star.
+ *
+ * The row is `row-reverse` and the DOM runs 5 â†’ 1, so the FIRST input is the
+ * rightmost star. Offsets count from the right edge for that reason; getting
+ * this backwards would put every hit target one star away from the one it
+ * lights.
+ */
+.cited-reviews .cited-rate__stars .cited-rate__input:nth-of-type(1) { right: 0; }
+.cited-reviews .cited-rate__stars .cited-rate__input:nth-of-type(2) { right: calc(2em + 2px); }
+.cited-reviews .cited-rate__stars .cited-rate__input:nth-of-type(3) { right: calc(4em + 4px); }
+.cited-reviews .cited-rate__stars .cited-rate__input:nth-of-type(4) { right: calc(6em + 6px); }
+.cited-reviews .cited-rate__stars .cited-rate__input:nth-of-type(5) { right: calc(8em + 8px); }
+
+/* Focus lands on the input now, so the ring is drawn from it onto the star
+ * beside it â€” the label is the next sibling in the DOM. */
+.cited-reviews .cited-rate__input:focus-visible + .cited-rate__label {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/*
+ * The row keeps its own width so the absolutely-positioned inputs have
+ * something to sit against: five stars plus four 2px gaps.
+ */
+.cited-reviews .cited-rate__stars {
+  width: calc(10em + 8px);
+  min-height: 2em;
+}
