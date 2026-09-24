@@ -2081,3 +2081,80 @@
   font-size: inherit;
   line-height: inherit;
 }
+
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+ * Star input: the star under the cursor must light up
+ *
+ * It did not, and the cause was specificity rather than logic.
+ *
+ *   .cited-rate__stars:hover .cited-rate__label      (0,3,0)  dims all
+ *   .cited-rate__label:hover                         (0,2,0)  lights hovered
+ *   .cited-rate__label:hover ~ .cited-rate__label    (0,3,0)  lights the rest
+ *
+ * The middle rule loses to the dimming rule; the third ties and, coming later,
+ * wins. So hovering the 5th star lit 4, 3, 2 and 1 and left the 5th grey â€”
+ * pick five stars and the control showed four until the cursor moved away.
+ * A rating input that misreports the rating is worse than no preview at all.
+ *
+ * Both rules are now qualified by the hovered container, which puts them at
+ * (0,4,0) and above the rule they were losing to. Stated as a pair so the
+ * hovered star and its neighbours can never disagree again.
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+
+.cited-reviews .cited-rate__stars:hover .cited-rate__label:hover,
+.cited-reviews .cited-rate__stars:hover .cited-rate__label:hover ~ .cited-rate__label {
+  color: var(--cited-star);
+}
+
+/*
+ * The same trap, one keyboard away. Focus moves the radio, not the pointer, so
+ * a keyboard user gets no hover at all â€” the checked rule covers them, but it
+ * has to out-rank the dim rule while the mouse happens to be over the row.
+ */
+.cited-reviews .cited-rate__stars .cited-rate__input:checked ~ .cited-rate__label {
+  color: var(--cited-star);
+}
+.cited-reviews .cited-rate__stars:hover .cited-rate__input:checked ~ .cited-rate__label {
+  color: var(--cited-border);
+}
+.cited-reviews .cited-rate__stars:hover .cited-rate__label:hover,
+.cited-reviews .cited-rate__stars:hover .cited-rate__label:hover ~ .cited-rate__label {
+  color: var(--cited-star);
+}
+
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+ * The write form, at a readable size
+ *
+ * Its labels and hints were the only text in the block still sized off the
+ * document root, and at the small end of it â€” an 11px label over a 9px hint,
+ * which is below what most guidelines will accept and looked like fine print
+ * beside a storefront running 16â€“18px copy. Sized from the inherited context
+ * like everything else, and the tap targets brought up with them.
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+
+.cited-reviews .cited-rate__legend,
+.cited-reviews .cited-reviews__field-label { font-size: 0.95em; font-weight: 600; }
+
+.cited-reviews .cited-reviews__optional { font-size: 0.9em; }
+
+.cited-reviews .cited-upload__hint { font-size: 0.85em; }
+
+.cited-reviews .cited-reviews__as { font-size: 0.9em; }
+
+.cited-reviews .cited-reviews__form-heading { font-size: 1em; }
+
+/* A three-row textarea was rendering about 60px tall. Reviews are the thing
+ * this form exists to collect; the box should look like it expects a
+ * paragraph. */
+.cited-reviews .cited-reviews__form textarea {
+  min-height: 7em;
+  padding: 0.7em 0.8em;
+  line-height: 1.5;
+}
+
+.cited-reviews .cited-reviews__form textarea::placeholder { font-size: 0.95em; }
+
+/* Bigger stars to aim at â€” 26px was fine with a mouse and mean on a phone. */
+.cited-reviews .cited-rate__label svg { width: 2em; height: 2em; }
+
+.cited-reviews .cited-reviews__submit { font-size: 1em; padding: 0.8em 1.4em; }
