@@ -2015,3 +2015,69 @@
 
 /* Room to breathe under the message above it. */
 .cited-reviews .cited-blank + .cited-reviews__form-wrap { margin-top: 4px; }
+
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+ * Typography: the theme's, not ours
+ *
+ * Nothing here declared a font-family, so body copy already inherited. Two
+ * things still made the block read as imported rather than native.
+ *
+ * HEADINGS. Most Shopify themes set a separate display face for headings, and
+ * apply it through their own `h2`/`h3` rules. Our headings are inside a scoped
+ * class, so those theme rules lose on specificity and our h2 rendered in the
+ * BODY face â€” "Customer reviews" in a different typeface from every other
+ * section heading on the page, which is exactly the mismatch you notice
+ * without being able to name.
+ *
+ * Read from the theme's own custom properties where they exist, falling back
+ * to `inherit` where they do not. This is the one place it is safe to know
+ * about a theme convention: a var() fallback cannot fail â€” a theme without
+ * these properties gets the inherited font, which is what it had before.
+ *
+ * SIZES. 72 font-sizes in `rem`, which is the DOCUMENT root â€” almost always
+ * 16px regardless of what the theme sets. A theme running 18px body copy got a
+ * widget rendering at 14.6px beside it. `em` resolves against the inherited
+ * size instead, so the block scales with whatever context the merchant drops
+ * it into. Applied to the text a shopper actually reads; the chrome keeps rem,
+ * where absolute sizing is correct and compounding would be a hazard.
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+
+.cited-reviews__heading,
+.cited-review__title,
+.cited-blank__title {
+  font-family: var(--font-heading-family, inherit);
+  font-weight: var(--font-heading-weight, 600);
+}
+
+/* The theme's heading weight can be light; a card title still needs to out-rank
+ * the body text under it, so this one keeps its own. */
+.cited-review__title { font-weight: 600; }
+
+.cited-reviews__heading { font-size: 1.5em; }
+.cited-review__title { font-size: 1em; }
+.cited-review__body { font-size: 0.95em; }
+.cited-review__author { font-size: 0.9em; }
+.cited-review__date { font-size: 0.8em; }
+.cited-review__verified { font-size: 0.78em; }
+.cited-reviews .cited-blank__title { font-size: 1.1em; }
+.cited-reviews .cited-blank__sub { font-size: 0.95em; }
+.cited-reviews .cited-summary-bar__avg { font-size: 1.15em; }
+.cited-reviews .cited-summary-bar__count { font-size: 0.9em; }
+.cited-reviews .cited-reviews__write { font-size: 0.9em; }
+.cited-reviews .cited-chip { font-size: 0.85em; }
+.cited-reviews .cited-menu__item { font-size: 0.85em; }
+.cited-reviews .cited-sort__label { font-size: 0.85em; }
+.cited-reviews .cited-tabs__tab { font-size: 0.95em; }
+.cited-reviews .cited-gallery__head { font-size: 0.95em; }
+
+/* Buttons and inputs do not inherit font by default in any browser, and a form
+ * rendering in the UA's default face inside a themed storefront is the most
+ * obvious tell of all. */
+.cited-reviews button,
+.cited-reviews input,
+.cited-reviews textarea,
+.cited-reviews select {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
