@@ -316,8 +316,17 @@
     <input class="cited-state cited-state--s-low" type="radio" name="cited-s-{{ uid }}" id="cited-s-low-{{ uid }}">
   {%- endif -%}
 
+  {%- comment -%}
+    Centred only when there is nothing to show. With reviews the heading sits
+    above a grid and belongs on the left edge where the cards start; with none
+    it was stranded at the far left of a 1700px section while the empty message
+    sat centred a third of the way across, reading as two unrelated fragments
+    with a lake between them.
+  {%- endcomment -%}
   {%- if heading != blank -%}
-    <h2 class="cited-reviews__heading">{{ heading | escape }}</h2>
+    <h2 class="cited-reviews__heading{% unless has_reviews %} cited-reviews__heading--center{% endunless %}">
+      {{ heading | escape }}
+    </h2>
   {%- endif -%}
 
   {%- if has_reviews and has_store -%}
@@ -487,7 +496,20 @@
       {%- render 'cited-stars', rating: 0, scale_max: scale_max, size: 20 -%}
       <p class="cited-blank__title">{{ empty_text | escape }}</p>
       {%- if enable_form -%}
-        <p class="cited-blank__sub">Be the first to share your experience with this product.</p>
+        {%- comment -%}
+          "Write a review", not `form_button`.
+
+          `form_button` is the label on the button that SENDS the form — it
+          defaults to "Submit review" — so using it here produced two identical
+          black buttons stacked a few hundred pixels apart, one opening the
+          form and one submitting it, with nothing to tell them apart. A
+          shopper cannot act on that, and a merchant reads it as a duplicate.
+
+          The default text is also not repeated underneath: `empty_text`
+          already reads "No reviews yet. Be the first to share your thoughts.",
+          and a second line saying the same thing in different words was the
+          same invitation twice.
+        {%- endcomment -%}
         <a
           class="cited-reviews__write"
           {% if customer %}
@@ -496,7 +518,7 @@
             href="{{ routes.account_login_url }}?return_url={{ product.url | url_encode }}"
           {% endif %}
         >
-          {{ form_button | escape }}
+          Write a review
         </a>
       {%- endif -%}
     </div>

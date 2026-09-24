@@ -270,25 +270,19 @@
  * One centred column, capped at a readable measure. The invitation to write
  * the first review is the only thing on the page, so it gets the middle of it.
  */
-.cited-reviews__layout--blank {
-  grid-template-columns: 1fr;
-  max-width: 32rem;
-  margin-inline: auto;
-  text-align: center;
-}
-
-.cited-reviews__layout--blank .cited-reviews__cta {
-  border-top: 0;
-  padding-top: 0;
-}
-
-/* The button was full-width by design in a narrow aside; centred in a 32rem
- * column it would be a 32rem slab, so here it shrinks to its content. */
-.cited-reviews__layout--blank .cited-reviews__submit {
-  display: inline-block;
-  width: auto;
-  min-width: 14rem;
-}
+/*
+ * Centring belongs to the empty MESSAGE, never to the layout.
+ *
+ * This set `text-align: center` on the whole blank layout, which cascaded
+ * straight into the write-a-review form underneath — so "Your rating", "Your
+ * review" and "Photos optional" were centred over their own inputs. Form
+ * labels are read down a left edge; centring them is the tell of a layout rule
+ * that escaped its scope.
+ *
+ * The max-width went with it: it was squeezing the form into a 32rem column as
+ * well. Each block now carries its own measure.
+ */
+.cited-reviews__layout--blank { grid-template-columns: 1fr; }
 
 .cited-reviews__score {
   display: flex;
@@ -1912,3 +1906,51 @@
     align-items: center;
   }
 }
+
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+ * Empty state and write form, composed as one column
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+
+/*
+ * With nothing to show, the heading centres with the message it belongs to.
+ *
+ * Left-aligned against a centred message in a 1700px section, the two read as
+ * unrelated fragments sitting on opposite sides of the page â€” the heading at
+ * the far left, the message a third of the way across, and a lake of empty
+ * between them. Centred together they are one block.
+ *
+ * Only when empty. With reviews the heading is a section heading above a grid
+ * and belongs on the left edge, where the cards start.
+ */
+.cited-reviews__heading--center { text-align: center; }
+
+/* The empty message keeps its own measure and its own centring. */
+.cited-reviews .cited-blank { text-align: center; }
+
+/*
+ * The form is a column of its own, centred but read from a left edge.
+ *
+ * It sits under the empty state, so without a measure of its own it either
+ * inherited the message's 32rem or ran the full width of the section. Both
+ * were wrong: a form is read down its labels, and its inputs need a
+ * predictable width.
+ */
+.cited-reviews .cited-reviews__form-wrap {
+  max-width: 34rem;
+  margin-inline: auto;
+  text-align: left;
+}
+
+/* The disclosure that opens it reads as a heading, so it is centred with the
+ * message above rather than sitting off to one side of it. */
+.cited-reviews .cited-reviews__form-heading { text-align: center; }
+
+/*
+ * Distinct from the submit button inside the form.
+ *
+ * Both were labelled from `form_button`, so the empty state offered "Submit
+ * review", the form's own button said "Submit review", and two identical black
+ * buttons sat one above the other with nothing to distinguish what each one
+ * did. This one opens the form; that one sends it.
+ */
+.cited-reviews .cited-blank .cited-reviews__write { min-width: 12rem; }
