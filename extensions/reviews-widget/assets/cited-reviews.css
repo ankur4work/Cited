@@ -1954,3 +1954,64 @@
  * did. This one opens the form; that one sends it.
  */
 .cited-reviews .cited-blank .cited-reviews__write { min-width: 12rem; }
+
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+ * Centring, once, at the top
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+
+/*
+ * The layout centres itself in the section.
+ *
+ * It had a 74rem cap and no `margin-inline`, so in a 1700px section it sat
+ * pinned to the left edge â€” and everything that centred INSIDE it (the empty
+ * message, the write form) centred on the middle of that left-pinned box,
+ * about a third of the way across the page. The heading, which sits outside
+ * the layout, centred on the section itself. Two different centres, which is
+ * why the message and the heading above it never lined up.
+ *
+ * One `auto` fixes both, because now there is only one centre.
+ */
+.cited-reviews__layout { margin-inline: auto; }
+
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+ * One control to open the form
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+
+/*
+ * Collapsed, the form is its button â€” not a button beside a grey slab.
+ *
+ * A signed-in shopper was shown a black "Write a review" and, underneath it, a
+ * bordered grey panel whose only visible content was the words "Write a
+ * review" again. Two controls, same label, one of which looked like an empty
+ * box. The disclosure IS the affordance, so collapsed it drops its panel
+ * chrome entirely and its summary takes the button styling.
+ *
+ * Open, the chrome returns â€” there is a form inside it then, and the panel is
+ * what groups the fields.
+ */
+.cited-reviews .cited-reviews__form-wrap:not([open]) {
+  border-color: transparent;
+  background: transparent;
+  padding: 0;
+}
+
+.cited-reviews .cited-reviews__form-wrap:not([open]) .cited-reviews__form-heading {
+  padding: 10px 20px;
+  border-radius: var(--cited-radius);
+  background: var(--cited-text);
+  color: Canvas;
+  font-size: 0.875rem;
+}
+
+.cited-reviews .cited-reviews__form-wrap:not([open]) .cited-reviews__form-heading:hover {
+  opacity: 0.88;
+}
+
+/* Centred under the empty message, left-aligned once open so the fields and
+ * their labels share an edge. */
+.cited-reviews .cited-reviews__form-wrap:not([open]) { text-align: center; }
+.cited-reviews .cited-reviews__form-wrap[open] { text-align: left; }
+.cited-reviews .cited-reviews__form-wrap[open] .cited-reviews__form-heading { text-align: left; }
+
+/* Room to breathe under the message above it. */
+.cited-reviews .cited-blank + .cited-reviews__form-wrap { margin-top: 4px; }

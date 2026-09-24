@@ -469,7 +469,7 @@
         Signed in, it jumps to the write form further down, which is a
         `details` the shopper opens themselves.
       {%- endcomment -%}
-      {%- if enable_form -%}
+      {%- if enable_form and customer == blank -%}
         <a
           class="cited-reviews__write"
           {% if customer %}
@@ -495,7 +495,7 @@
     <div class="cited-blank">
       {%- render 'cited-stars', rating: 0, scale_max: scale_max, size: 20 -%}
       <p class="cited-blank__title">{{ empty_text | escape }}</p>
-      {%- if enable_form -%}
+      {%- if enable_form and customer == blank -%}
         {%- comment -%}
           "Write a review", not `form_button`.
 
