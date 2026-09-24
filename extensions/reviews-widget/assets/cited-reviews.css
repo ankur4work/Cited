@@ -2228,3 +2228,128 @@
   width: calc(10em + 8px);
   min-height: 2em;
 }
+
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+ * Hover must come from the input, now that the input is on top
+ *
+ * The previous commit laid each radio over its star at z-index 1 so the
+ * browser could validate it. That fixed validation and broke the preview: the
+ * pointer is now over the INPUT, so `.cited-rate__label:hover` never matches
+ * again. Every star went grey the moment the cursor entered the row, and
+ * clicking one changed nothing until the cursor left â€” which is worse than
+ * the bug it replaced, because now nothing lights at all.
+ *
+ * The hover has to be read from the element actually under the pointer. Each
+ * input precedes its own label in the DOM, so `input:hover ~ label` covers
+ * that star and every one after it, which is the whole preview in one rule.
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+
+.cited-reviews .cited-rate__stars:hover .cited-rate__label { color: var(--cited-border); }
+
+.cited-reviews .cited-rate__stars .cited-rate__input:hover ~ .cited-rate__label {
+  color: var(--cited-star);
+}
+
+/* Keyboard: focus moves the radio without any pointer involved, so the
+ * checked state has to survive a hover that is happening elsewhere. */
+.cited-reviews .cited-rate__stars .cited-rate__input:focus-visible ~ .cited-rate__label {
+  color: var(--cited-star);
+}
+
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+ * One box, holding the heading and the content alike
+ *
+ * The 74rem cap and its centring lived on `.cited-reviews__layout`, and the
+ * heading and tabs sit OUTSIDE that element â€” so in a 1900px section the
+ * heading began at the section's left edge while everything under it began
+ * 350px further in. Same class of fault as before, in the other direction:
+ * two boxes, two left edges.
+ *
+ * The cap belongs on the section, which contains all of it.
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+
+.cited-reviews {
+  max-width: 74rem;
+  margin-inline: auto;
+}
+
+.cited-reviews__layout {
+  max-width: none;
+  margin-inline: 0;
+}
+
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+ * A single review card, at a readable width
+ *
+ * `grid-template-columns: minmax(0, 38rem)` with `justify-content: center`
+ * does not give a 38rem card â€” it gives a track sized to its CONTENT, capped
+ * at 38rem. A review reading "good product" therefore produced a card about
+ * 180px wide, marooned in the middle of the section, which is not what a
+ * maximum width is for.
+ *
+ * The width belongs to the list, not to the track. One full-width column
+ * inside a list that is itself capped and centred.
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+
+.cited-reviews .cited-reviews__list--one {
+  grid-template-columns: minmax(0, 1fr);
+  justify-content: stretch;
+  width: min(38rem, 100%);
+  margin-inline: auto;
+}
+
+/* Same trap, two cards: the pair should share the row, not huddle. */
+.cited-reviews .cited-reviews__list--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  justify-content: stretch;
+}
+
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+ * Chosen files, shown
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+
+/*
+ * The tile is a styled label over a real file input, so picking a photo
+ * changed nothing on screen â€” no name, no count, no thumbnail. A shopper
+ * cannot tell an upload that worked from one that did not.
+ *
+ * The list is written by the enhancement script; with scripting off the input
+ * still works and the browser's own "2 files" text is what shows, because the
+ * native control is only hidden once the script has something better to put
+ * in its place.
+ */
+.cited-reviews .cited-upload__chosen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.cited-reviews .cited-upload__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--cited-hairline);
+  border-radius: 999px;
+  font-size: 0.8em;
+  background: var(--cited-surface);
+}
+
+.cited-reviews .cited-upload__thumb {
+  width: 1.6em;
+  height: 1.6em;
+  border-radius: 4px;
+  object-fit: cover;
+  flex: none;
+}
+
+.cited-reviews .cited-upload__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 12em;
+}

@@ -509,7 +509,14 @@ export async function POST(req: NextRequest) {
       : liquidResponse(200, 'Thanks for your review', message, fields.returnPath);
   } catch (err) {
     if (err instanceof DuplicateReviewError) {
-      const message = 'You have already reviewed this product.';
+      // Says what happened AND what to do about it. The bare sentence read as
+      // a bug to anyone whose first attempt had failed on validation and been
+      // retried — they know they have not reviewed this product, because from
+      // where they are sitting the successful attempt is the one that looked
+      // like it failed. Naming the one-per-customer rule makes it a policy
+      // rather than a contradiction.
+      const message =
+        'You have already reviewed this product. Each customer can leave one review per product — scroll up to see yours, or contact the store to change it.';
       return wantsJson
         ? NextResponse.json({ error: message }, { status: 409 })
         : liquidResponse(409, 'Already reviewed', message, fields.returnPath);
