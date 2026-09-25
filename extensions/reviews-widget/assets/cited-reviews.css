@@ -247,9 +247,20 @@
  * `start`, not `stretch`: the aside is short and the list can be very long, and
  * a stretched aside would draw a column of empty background down the page.
  */
+/*
+ * ONE column. The aside this reserved a track for no longer exists.
+ *
+ * The summary moved into a single line at the top of the main column, and the
+ * `<aside>` was deleted with it — but this kept declaring
+ * `minmax(14rem, 18rem) 1fr`, so above a 46rem container an empty 224–288px
+ * track still sat to the left of everything and squeezed the reviews into
+ * what was left. Dead structure holding real space: the reviews were narrower
+ * than the block they were in, and offset from the heading above them, for a
+ * column with nothing in it.
+ */
 .cited-reviews__layout {
   display: grid;
-  grid-template-columns: minmax(14rem, 18rem) 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: calc(var(--cited-gap) * 1.5);
   align-items: start;
   margin-top: var(--cited-gap);
@@ -2353,3 +2364,53 @@
   white-space: nowrap;
   max-width: 12em;
 }
+
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+ * Centred, whatever the count
+ *
+ * Stated on the CARD rather than on the track, so it holds no matter which
+ * grid rule ends up applying â€” one review, two, twelve, any container width,
+ * and regardless of whether the count-bucket class is on the list at all.
+ * Every previous attempt at this centred a track instead, and a track sizes
+ * to its content: a review reading "good product" got a card the width of
+ * those two words and sat wherever that landed.
+ *
+ * `width: 100%` makes the card fill its column; `max-width` stops it becoming
+ * an unreadable line of text across a wide section; `margin-inline: auto`
+ * centres whatever is left over. The three together cannot produce a card
+ * that is both narrow and off-centre, which is the failure this keeps
+ * returning to.
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+
+.cited-reviews .cited-reviews__list > li,
+.cited-reviews .cited-store__grid > li {
+  width: 100%;
+  max-width: 38rem;
+  margin-inline: auto;
+}
+
+/* The list centres its tracks too, for the case where they genuinely do not
+ * fill the row â€” belt as well as braces, and harmless when they do. */
+.cited-reviews .cited-reviews__list,
+.cited-reviews .cited-store__grid { justify-content: center; }
+
+/*
+ * With a single review the controls above it centre as well.
+ *
+ * A 38rem card centred under a left-aligned toolbar reads as two things that
+ * failed to line up. Either both sit left or both sit centre; with one review
+ * there is no column of cards for the toolbar to align to, so centre is the
+ * one that looks deliberate.
+ */
+.cited-reviews:has(.cited-reviews__list--one) .cited-summary-bar,
+.cited-reviews:has(.cited-reviews__list--one) .cited-toolbar {
+  justify-content: center;
+}
+
+.cited-reviews:has(.cited-reviews__list--one) .cited-reviews__write { margin-left: 0; }
+
+/*
+ * Browsers without `:has()` simply keep the left-aligned toolbar, which is
+ * the layout used for every other count. Nothing breaks; it is only less
+ * pleasing in the one-review case.
+ */
