@@ -2476,9 +2476,27 @@
  * returning to.
  * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
+/*
+ * A card fills its track. The readable cap is for the case it was written for
+ * — ONE review, where the track is the whole list and an uncapped card would
+ * be a single line of text across the section.
+ *
+ * Applied to every card it does the opposite of its purpose: with two reviews
+ * in a 1280px list the tracks are 632px, the cap trims each card to 532px, and
+ * `margin-inline: auto` then centres the remainder — so both cards sat 50px
+ * inside the list, and the grid no longer lined up with the heading and
+ * toolbar above it. The same "two left edges" complaint, arriving through a
+ * rule that was meant to fix it.
+ *
+ * Multi-column tracks cannot get wide enough to need the cap: the grid adds a
+ * column rather than stretching one past ~600px.
+ */
 .cited-reviews .cited-reviews__list > li,
 .cited-reviews .cited-store__grid > li {
   width: 100%;
+}
+
+.cited-reviews .cited-reviews__list--one > li {
   max-width: calc(38 * var(--cited-rem));
   margin-inline: auto;
 }
