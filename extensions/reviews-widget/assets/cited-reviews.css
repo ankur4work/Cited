@@ -2526,3 +2526,170 @@
  * the layout used for every other count. Nothing breaks; it is only less
  * pleasing in the one-review case.
  */
+
+/* ══ Design pass, 2026-09-28 ═══════════════════════════════════════════════
+ *
+ * The first pass this block has had against a product carrying a real corpus
+ * rather than the two reviews that were on the dev store all week. Ten cards
+ * on the page made three things obvious that two never could, and each rule
+ * below is one of them. Measured at a 1280px section in the dev theme, where
+ * `--cited-rem` resolves to 14px.
+ */
+
+/*
+ * Three columns, not five.
+ *
+ * `minmax(17rem, 1fr)` produced FIVE 243px tracks at 1280px. At the body size
+ * used here that is about 28 characters a line — half the 45–75 that reading
+ * research puts as comfortable, and narrow enough that every review looked
+ * like a fragment of a review. Ten of them read as a wall of torn paper.
+ *
+ * 23rem floors it at three tracks of ~416px (≈52 characters) on a full-width
+ * section, two in a theme column, one on a phone. Still a minimum rather than
+ * `repeat(3, …)`, because this block is dropped into someone else's layout
+ * and cannot know its own width — see the auto-fit note above, which still
+ * holds: auto-fit, so a single review is one full-width card rather than one
+ * marooned beside four empty tracks.
+ */
+.cited-reviews .cited-reviews__list {
+  grid-template-columns: repeat(auto-fit, minmax(min(calc(23 * var(--cited-rem)), 100%), 1fr));
+  align-items: stretch;
+}
+
+/*
+ * Cards that end where their neighbours end.
+ *
+ * `align-items: start` was deliberate and it was wrong at this count: with ten
+ * cards the heights ran 147px to 279px, so every row finished on a different
+ * line and the grid had no horizontal edge anywhere. The old objection —
+ * "equal heights would mean columns of mostly empty box" — was answered by the
+ * clamp below rather than by giving up the alignment: nothing can now tower
+ * over its row by more than a few lines, so stretching costs almost nothing
+ * and buys a grid that looks built instead of dropped.
+ *
+ * A flex column so the footer can be pinned; `height: 100%` because a stretched
+ * grid item's height comes from the track, not from `align-self`.
+ */
+.cited-reviews .cited-review {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: calc(var(--cited-gap) * 1.15);
+  border-radius: calc(var(--cited-radius) * 1.5);
+  /*
+   * A hair of tint rather than none. The old comment is right that a filled
+   * surface turns a light theme into grey slabs — but `currentColor` at 2.5%
+   * is below that threshold and mixes against the theme's own text colour, so
+   * it lifts the card off the page on a light theme and stays a shade darker
+   * than the page on a dark one. Borders alone left the section reading as a
+   * wireframe of itself.
+   */
+  background: color-mix(in srgb, currentColor 2.5%, transparent);
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.cited-reviews .cited-review:hover {
+  border-color: color-mix(in srgb, currentColor 24%, transparent);
+  background: color-mix(in srgb, currentColor 4%, transparent);
+}
+
+/*
+ * Body copy, bounded.
+ *
+ * 13.3px at 1.65 rather than 13.3 at 1.6: the extra leading is what makes a
+ * 52-character measure read as prose. The clamp is the load-bearing part —
+ * one 1,200-word review must not decide the height of the two cards beside
+ * it. Twelve lines is ~600 characters at this measure, which is longer than
+ * any review in the seeded corpus, so in practice it bounds the outlier and
+ * touches nothing else.
+ *
+ * `overflow-wrap: anywhere` because shoppers paste URLs. One seeded review
+ * carries a 78-character handle that otherwise pushes its own card wider than
+ * its track.
+ */
+.cited-reviews .cited-review__body {
+  font-size: calc(0.9375 * var(--cited-rem));
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 12;
+  line-clamp: 12;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.cited-reviews .cited-review__title {
+  font-size: calc(1 * var(--cited-rem));
+  font-weight: 600;
+  margin-top: calc(var(--cited-gap) * 0.5);
+}
+
+/*
+ * Author and date on the floor of the card, not wherever the text happens to
+ * stop. With equal heights this is what gives every row a second horizontal
+ * line to read against — the first being the top edge.
+ */
+.cited-reviews .cited-review__meta {
+  margin-top: auto;
+  padding-top: calc(var(--cited-gap) * 0.75);
+  font-size: calc(0.8125 * var(--cited-rem));
+}
+
+/*
+ * ── The rating summary ──
+ *
+ * It was a 33px strip: stars, "4.3", "14 reviews", and the histogram folded
+ * away behind a "Rating breakdown" dropdown. That is the one moment on the
+ * page where the reviews argue for the product rather than describe it, and
+ * it was the smallest thing in the section.
+ *
+ * The histogram is inline again, but NOT in the fixed 14–18rem aside that was
+ * rightly deleted: this is a flex row that wraps, so in a narrow theme column
+ * the bars drop below the score instead of squeezing the reviews into a
+ * strip. The panel keeps the score, the bars and the write button on one line
+ * wherever there is room for them and stacks them where there is not.
+ */
+.cited-reviews .cited-summary-bar {
+  align-items: center;
+  gap: calc(var(--cited-gap) * 0.75) calc(var(--cited-gap) * 1.5);
+  padding: calc(var(--cited-gap) * 1.1) calc(var(--cited-gap) * 1.25);
+  border: 1px solid var(--cited-hairline);
+  border-radius: calc(var(--cited-radius) * 1.5);
+  background: color-mix(in srgb, currentColor 2.5%, transparent);
+}
+
+/* Score block: the number leads, the stars confirm it, the count qualifies it. */
+.cited-reviews .cited-summary-bar__score {
+  flex: none;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  line-height: 1.1;
+}
+
+.cited-reviews .cited-summary-bar__avg {
+  font-size: calc(2.25 * var(--cited-rem));
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  order: -1;
+}
+
+.cited-reviews .cited-summary-bar__count {
+  font-size: calc(0.8125 * var(--cited-rem));
+}
+
+/*
+ * The bars take the middle and give it back: `flex: 1 1 auto` with a ceiling,
+ * so they fill a wide section without becoming a 900px chart on one.
+ */
+.cited-reviews .cited-summary-bar__breakdown {
+  flex: 1 1 calc(18 * var(--cited-rem));
+  max-width: calc(34 * var(--cited-rem));
+  min-width: 0;
+}
+
+.cited-reviews .cited-summary-bar__breakdown .cited-rating__bars { gap: 3px; }
+
+.cited-reviews .cited-summary-bar__breakdown .cited-rating__row {
+  font-size: calc(0.75 * var(--cited-rem));
+}

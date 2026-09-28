@@ -443,18 +443,24 @@
         </span>
       </p>
 
+      {%- comment -%}
+        The histogram is shown, not folded away behind "Rating breakdown".
+
+        The disclosure was the right answer to the layout it replaced — a
+        fixed 14–18rem aside that squeezed the review grid at every width the
+        block did not control. It is the wrong answer to the question the
+        shopper is asking. This is the one element on the page where the
+        reviews argue for the product instead of describing it, and it was
+        costing a click to see.
+
+        Nothing fixed-track returns with it: the bars are a flex child with a
+        ceiling, so they take the middle of a wide section and drop below the
+        score in a narrow one. See the summary-bar rules in the stylesheet.
+      {%- endcomment -%}
       {%- if rating_breakdown != blank -%}
-        <details class="cited-menu cited-summary-bar__more">
-          <summary class="cited-chip cited-chip--menu">
-            Rating breakdown
-            <svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true" focusable="false">
-              <path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </summary>
-          <div class="cited-menu__panel cited-menu__panel--wide">
-            {%- render 'cited-breakdown', breakdown: rating_breakdown, total: rating_count, scale_max: scale_max -%}
-          </div>
-        </details>
+        <div class="cited-summary-bar__breakdown">
+          {%- render 'cited-breakdown', breakdown: rating_breakdown, total: rating_count, scale_max: scale_max -%}
+        </div>
       {%- endif -%}
 
       {%- comment -%}
