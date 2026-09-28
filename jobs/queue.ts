@@ -10,6 +10,35 @@ export const connection = new IORedis(env.REDIS_URL, {
   lazyConnect: true,
 });
 
+/**
+ * A connection for the WORKER process, deliberately NOT lazy.
+ *
+ * `lazyConnect` is load-bearing above and poison below, and the difference is
+ * worth spelling out because it cost three days of silent downtime on
+ * 2026-09-25.
+ *
+ * A `Worker` needs a connection it can block on, so BullMQ duplicates
+ * whatever it is handed — options and all. A duplicate of a lazy client has
+ * status `wait`, and `RedisConnection.waitUntilReady` answers that status with
+ * a bare `client.connect()`: ONE attempt, whose promise rejects with
+ * `Connection is closed.` if the socket dies before the handshake. That
+ * rejected promise is then cached as the connection's `client` forever, so
+ * `Worker.run()` rethrows it, the main loop is never entered, and the worker
+ * consumes nothing for the life of the process. ioredis reconnects underneath
+ * — the socket comes back, the queues keep accepting work, and nothing is
+ * logged, which is why it went unnoticed.
+ *
+ * A non-lazy client is `connecting` at that moment instead, which takes the
+ * branch that waits for a `ready` event, and ioredis's retry strategy carries
+ * it across the outage. Same blip, no permanent damage.
+ *
+ * Safe to be eager because only the worker entrypoint calls this — never a
+ * Next.js route, so never a build.
+ */
+export function createWorkerConnection(): IORedis {
+  return new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
+}
+
 export const QUEUES = {
   INGESTION: 'ingestion',
   SYNDICATION: 'syndication',

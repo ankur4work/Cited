@@ -1,6 +1,7 @@
 import { Worker, type Job } from 'bullmq';
 import {
   connection,
+  createWorkerConnection,
   maintenanceQueue,
   QUEUES,
   type IngestionJobData,
@@ -46,6 +47,13 @@ import { prisma } from '@/lib/prisma';
  * than stubbed — a no-op processor would silently ACK real work as done.
  */
 
+/**
+ * Every Worker below blocks on THIS connection, not the lazy one the queues
+ * use. See `createWorkerConnection` for what a lazy connection does to a
+ * worker the first time Redis blinks.
+ */
+const workerConnection = createWorkerConnection();
+
 type IngestionHandler = (job: Job<IngestionJobData, unknown, IngestionJobName>) => Promise<void>;
 
 const ingestionHandlers: Record<IngestionJobName, IngestionHandler> = {
@@ -61,7 +69,7 @@ const ingestionWorker = new Worker<IngestionJobData, unknown, IngestionJobName>(
     return handler(job);
   },
   {
-    connection,
+    connection: workerConnection,
     // Deliberately low. Each job drives a Shopify bulk operation, and a shop
     // may only run ONE bulk query at a time — high concurrency here would
     // mostly produce conflicts against the same shop, not throughput.
@@ -130,7 +138,7 @@ const syndicationWorker = new Worker<SyndicationJobData, unknown, SyndicationJob
     if (!handler) throw new Error(`No handler for job name ${job.name}`);
     return handler(job);
   },
-  { connection, concurrency: 20 },
+  { connection: workerConnection, concurrency: 20 },
 );
 
 syndicationWorker.on('failed', async (job, err) => {
@@ -189,7 +197,7 @@ const aiWorker = new Worker<AiJobData, unknown, AiJobName>(
     if (!handler) throw new Error(`No handler for job name ${job.name}`);
     return handler(job);
   },
-  { connection, concurrency: 2 },
+  { connection: workerConnection, concurrency: 2 },
 );
 
 aiWorker.on('failed', async (job, err) => {
@@ -234,7 +242,7 @@ const emailWorker = new Worker<EmailJobData, unknown, EmailJobName>(
     if (!handler) throw new Error(`No handler for job name ${job.name}`);
     return handler(job);
   },
-  { connection, concurrency: 3 },
+  { connection: workerConnection, concurrency: 3 },
 );
 
 emailWorker.on('failed', async (job, err) => {
@@ -281,7 +289,7 @@ const maintenanceWorker = new Worker<MaintenanceJobData, unknown, MaintenanceJob
     if (!handler) throw new Error(`No handler for job name ${job.name}`);
     return handler(job);
   },
-  { connection, concurrency: 2 },
+  { connection: workerConnection, concurrency: 2 },
 );
 
 maintenanceWorker.on('failed', async (job, err) => {
@@ -379,6 +387,91 @@ logger.info(
 );
 
 /**
+ * Liveness.
+ *
+ * "Cited worker started" is not evidence that anything is being consumed. On
+ * 2026-09-25 it was the last line this process ever logged: five workers had
+ * been left holding a rejected connection promise, so no main loop ever ran,
+ * and for three days the web tier enqueued reviews that nothing collected.
+ * The queue drained the moment the container was replaced, which is the
+ * signature of a consumer that was never there rather than work that failed.
+ *
+ * Two defences, because the first one only covers the failure we know about.
+ */
+const WATCHED = [
+  { queue: QUEUES.INGESTION, worker: ingestionWorker },
+  { queue: QUEUES.SYNDICATION, worker: syndicationWorker },
+  { queue: QUEUES.AI, worker: aiWorker },
+  { queue: QUEUES.EMAIL, worker: emailWorker },
+  { queue: QUEUES.MAINTENANCE, worker: maintenanceWorker },
+] as const;
+
+/**
+ * An unhandled `error` on a Worker is how a connection failure announces
+ * itself, and BullMQ forwards its blocking connection's errors here. Until
+ * now nothing listened, so the only trace was a raw stack trace on stderr
+ * that no log query would ever match.
+ */
+const ERROR_LOG_INTERVAL_MS = 60_000;
+const errorThrottle = new Map<string, { last: number; suppressed: number }>();
+
+for (const { queue, worker } of WATCHED) {
+  worker.on('error', (err) => {
+    // Throttled, and not for tidiness. A worker looping against a Redis that
+    // answers but misbehaves emits an error per iteration: an unthrottled
+    // listener wrote 308,109 lines in 20 seconds under test, which on a host
+    // shared with twenty other apps is a disk-full outage for all of them.
+    // One line a minute per queue, carrying what was swallowed.
+    const now = Date.now();
+    const state = errorThrottle.get(queue) ?? { last: 0, suppressed: 0 };
+
+    if (now - state.last < ERROR_LOG_INTERVAL_MS) {
+      state.suppressed += 1;
+      errorThrottle.set(queue, state);
+      return;
+    }
+
+    logger.error(
+      { queue, err: (err as Error).message, suppressed: state.suppressed },
+      'Worker connection error',
+    );
+    errorThrottle.set(queue, { last: now, suppressed: 0 });
+  });
+
+  worker.on('ready', () => {
+    logger.info({ queue }, 'Worker consuming');
+  });
+}
+
+/**
+ * Heartbeat, and the backstop for every variant of this we have not met yet.
+ *
+ * `isRunning()` is false for a worker whose main loop exited or never
+ * started — precisely the state that was invisible before. There is no way to
+ * revive one from inside the process (BullMQ caches the failed connection for
+ * good), so the honest response is to die and let the container restart,
+ * which is what actually fixed it by hand. Exiting non-zero also stops the
+ * restart from looking like a routine redeploy in the logs.
+ *
+ * Five minutes: long enough to be quiet, short enough that nobody loses a day.
+ */
+const HEARTBEAT_MS = 5 * 60_000;
+
+setInterval(() => {
+  const stopped = WATCHED.filter(({ worker }) => !worker.isRunning()).map(({ queue }) => queue);
+
+  if (stopped.length > 0) {
+    logger.fatal(
+      { stopped },
+      'Worker stopped consuming — exiting so the container restarts with a fresh connection',
+    );
+    process.exit(1);
+  }
+
+  logger.info({ queues: WATCHED.length }, 'Worker heartbeat — all queues consuming');
+}, HEARTBEAT_MS).unref();
+
+/**
  * Graceful shutdown.
  *
  * `close()` lets in-flight jobs finish instead of killing them mid-write —
@@ -396,7 +489,8 @@ async function shutdown(signal: string): Promise<void> {
       maintenanceWorker.close(),
     ]);
     await prisma.$disconnect();
-    await connection.quit();
+    // Both: the queues' lazy client and the one the workers block on.
+    await Promise.all([connection.quit(), workerConnection.quit()]);
   } catch (err) {
     logger.error({ err: (err as Error).message }, 'Error during worker shutdown');
   } finally {
