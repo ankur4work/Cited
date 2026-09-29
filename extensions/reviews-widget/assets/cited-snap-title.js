@@ -24,6 +24,32 @@
   var snaps = document.querySelectorAll('[data-cited-snap-title]');
   if (!snaps.length) return;
 
+  /*
+   * One rating under the title, however many blocks ask to be there.
+   *
+   * A merchant who presses "Add widget" twice — or who added the rating months
+   * ago and adds it again from the app because they cannot see the first one
+   * (it was at the bottom of the section, which is where Shopify puts a new
+   * block) — ends up with two Star Rating blocks in the theme. They were far
+   * apart and easy to miss until these started moving themselves to the same
+   * spot, and then the page reads "5.0 ★★★★★ 1 review 5.0 ★★★★★ 1 review".
+   *
+   * Every block carrying this attribute has asked for the same destination, so
+   * a second one is a duplicate by construction and the extras go. Only the
+   * ones that opted into snapping: a rating the merchant deliberately placed
+   * beside Add to cart has `snap_to_title` off, carries no attribute, and is
+   * never touched here.
+   *
+   * This hides a misconfiguration rather than curing it — the real fix is
+   * deleting the spare block in the theme editor — but a merchant should not
+   * have to know that to avoid a page that looks broken.
+   */
+  for (var extra = snaps.length - 1; extra >= 1; extra--) {
+    var dupe = snaps[extra];
+    if (dupe.parentNode) dupe.parentNode.removeChild(dupe);
+  }
+  snaps = [snaps[0]];
+
   function visible(el) {
     if (!el) return false;
     if (!el.offsetParent) return false;
