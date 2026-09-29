@@ -14,6 +14,20 @@
 (function () {
   'use strict';
 
+  /*
+   * Run once per page, however many times this file is included.
+   *
+   * The reviews section renders this script tag, and a store with BOTH the
+   * app embed and the "Cited Reviews" block enabled has that section twice —
+   * so the browser fetches one URL and executes it twice. Every listener below
+   * is then attached twice, which a merchant sees as a single chosen photo
+   * appearing as two chips, and as a submit that fires two requests: the first
+   * creates the review, the second comes back "You have already reviewed this
+   * product". Both were reported as separate bugs.
+   */
+  if (window.__citedFormEnhanced) return;
+  window.__citedFormEnhanced = true;
+
   var STAR =
     'M10 1.6l2.6 5.2 5.8.85-4.2 4.1 1 5.75L10 14.8l-5.2 2.7 1-5.75L1.6 7.65l5.8-.85z';
 
@@ -77,94 +91,115 @@
     else el.removeAttribute('data-tone');
   }
 
-  document.addEventListener('submit', function (event) {
-    var form = event.target;
-    if (!form || !form.hasAttribute || !form.hasAttribute('data-cited-form')) return;
+  /*
+   * CAPTURE phase, not bubble.
+   *
+   * A bubbling listener on `document` is last in line, and a theme that calls
+   * `stopPropagation()` while handling its own forms — which plenty do, to
+   * keep their cart drawer from reacting to everything — silences it without
+   * anyone noticing. Our handler then never runs, the browser submits the form
+   * for real, and a review with no rating comes back as a full page of the
+   * app proxy's own error instead of a line beside the stars. That is the
+   * "Choose a rating" page merchants kept reaching from a form that looked
+   * like it was working.
+   *
+   * Capture fires before any listener on the form or on anything between, so
+   * nothing can take it away from us.
+   */
+  document.addEventListener(
+    'submit',
+    function (event) {
+      var form = event.target;
+      if (!form || !form.hasAttribute || !form.hasAttribute('data-cited-form')) return;
 
-    event.preventDefault();
+      event.preventDefault();
 
-    var section = form.closest('.cited-reviews');
-    var status = form.querySelector('[data-cited-status]');
-    var button = form.querySelector('button[type="submit"]');
+      var section = form.closest('.cited-reviews');
+      var status = form.querySelector('[data-cited-status]');
+      var button = form.querySelector('button[type="submit"]');
 
-    /*
-     * No rating, no round trip.
-     *
-     * `required` on the radio group is supposed to make this unreachable, and
-     * on most themes it does. It is not reliable enough to lean on: a theme
-     * whose own CSS hides radios stops the browser being able to focus the
-     * invalid control, and browsers disagree about what to do then — some
-     * block the submit silently, some submit anyway. A merchant reported
-     * exactly that, and the result was a full-page server error reading
-     * "Choose a rating" for someone who was looking at the stars.
-     *
-     * Caught here, the answer appears beside the form with everything they
-     * typed still in it.
-     */
-    if (!form.querySelector('input[name="rating"]:checked')) {
-      setStatus(status, 'Please choose a star rating.', 'error');
-      var stars = form.querySelector('.cited-rate__stars');
-      if (stars && stars.scrollIntoView) stars.scrollIntoView({ block: 'center' });
-      var firstStar = form.querySelector('.cited-rate__input');
-      if (firstStar && firstStar.focus) firstStar.focus();
-      return;
-    }
+      /*
+       * No rating, no round trip.
+       *
+       * `required` on the radio group is supposed to make this unreachable, and
+       * on most themes it does. It is not reliable enough to lean on: a theme
+       * whose own CSS hides radios stops the browser being able to focus the
+       * invalid control, and browsers disagree about what to do then — some
+       * block the submit silently, some submit anyway. A merchant reported
+       * exactly that, and the result was a full-page server error reading
+       * "Choose a rating" for someone who was looking at the stars.
+       *
+       * Caught here, the answer appears beside the form with everything they
+       * typed still in it.
+       */
+      if (!form.querySelector('input[name="rating"]:checked')) {
+        setStatus(status, 'Please choose a star rating.', 'error');
+        // `starRow`, not `stars` — that name belongs to the renderer above,
+        // and a `var` here would shadow it for this whole function.
+        var starRow = form.querySelector('.cited-rate__stars');
+        if (starRow && starRow.scrollIntoView) starRow.scrollIntoView({ block: 'center' });
+        var firstStar = form.querySelector('.cited-rate__input');
+        if (firstStar && firstStar.focus) firstStar.focus();
+        return;
+      }
 
-    setStatus(status, 'Sending…');
-    if (button) button.disabled = true;
+      setStatus(status, 'Sending…');
+      if (button) button.disabled = true;
 
-    fetch(form.action, {
-      method: 'POST',
-      body: new FormData(form),
-      headers: { Accept: 'application/json' },
-      credentials: 'same-origin'
-    })
-      .then(function (res) {
-        return res.json().then(function (data) {
-          return { ok: res.ok, data: data };
-        });
+      fetch(form.action, {
+        method: 'POST',
+        body: new FormData(form),
+        headers: { Accept: 'application/json' },
+        credentials: 'same-origin'
       })
-      .then(function (result) {
-        if (!result.ok) {
-          // The server's message is the useful one — it distinguishes "you
-          // already reviewed this" from a validation problem.
-          setStatus(status, result.data.error || 'Your review could not be saved.', 'error');
-          if (button) button.disabled = false;
-          return;
-        }
+        .then(function (res) {
+          return res.json().then(function (data) {
+            return { ok: res.ok, data: data };
+          });
+        })
+        .then(function (result) {
+          if (!result.ok) {
+            // The server's message is the useful one — it distinguishes "you
+            // already reviewed this" from a validation problem.
+            setStatus(status, result.data.error || 'Your review could not be saved.', 'error');
+            if (button) button.disabled = false;
+            return;
+          }
 
-        setStatus(status, result.data.message || 'Thanks for your review.', 'ok');
-        form.reset();
+          setStatus(status, result.data.message || 'Thanks for your review.', 'ok');
+          form.reset();
 
-        if (!result.data.review || !section) return;
+          if (!result.data.review || !section) return;
 
-        var list = section.querySelector('.cited-reviews__list');
-        if (!list) {
-          // First review on this product: the empty state is what is on the
-          // page, so replace it with a list rather than appending to nothing.
-          var empty = section.querySelector('.cited-reviews__empty');
-          list = document.createElement('ol');
-          list.className = 'cited-reviews__list';
-          list.setAttribute('role', 'list');
-          if (empty && empty.parentNode) empty.parentNode.replaceChild(list, empty);
-          else section.insertBefore(list, section.querySelector('.cited-reviews__form-wrap'));
-        }
-        list.insertBefore(renderReview(result.data.review), list.firstChild);
-      })
-      .catch(function () {
-        // Network failure, or the proxy is unreachable. Fall back to a normal
-        // submit rather than losing what they wrote.
-        //
-        // `form.submit()` and not `requestSubmit()` on purpose — but note what
-        // that costs: submit() runs NO constraint validation and fires no
-        // submit event, so anything the guard above would have caught goes
-        // straight to the server and comes back as a full page. The guard
-        // above is what makes that acceptable: by here, a rating exists.
-        setStatus(status, '');
-        form.removeAttribute('data-cited-form');
-        form.submit();
-      });
-  });
+          var list = section.querySelector('.cited-reviews__list');
+          if (!list) {
+            // First review on this product: the empty state is what is on the
+            // page, so replace it with a list rather than appending to nothing.
+            var empty = section.querySelector('.cited-reviews__empty');
+            list = document.createElement('ol');
+            list.className = 'cited-reviews__list';
+            list.setAttribute('role', 'list');
+            if (empty && empty.parentNode) empty.parentNode.replaceChild(list, empty);
+            else section.insertBefore(list, section.querySelector('.cited-reviews__form-wrap'));
+          }
+          list.insertBefore(renderReview(result.data.review), list.firstChild);
+        })
+        .catch(function () {
+          // Network failure, or the proxy is unreachable. Fall back to a normal
+          // submit rather than losing what they wrote.
+          //
+          // `form.submit()` and not `requestSubmit()` on purpose — but note what
+          // that costs: submit() runs NO constraint validation and fires no
+          // submit event, so anything the guard above would have caught goes
+          // straight to the server and comes back as a full page. The guard
+          // above is what makes that acceptable: by here, a rating exists.
+            setStatus(status, '');
+            form.removeAttribute('data-cited-form');
+            form.submit();
+          });
+    },
+    true,
+  );
 
   /*
    * ── Make a click on a star set the rating ──
@@ -222,6 +257,12 @@
  */
 (function () {
   'use strict';
+
+  // Same reason as above: two copies of the section means this file executes
+  // twice, and a second `change` listener on the same input turns one chosen
+  // photo into two chips.
+  if (window.__citedUploadChips) return;
+  window.__citedUploadChips = true;
 
   var MAX_NAME = 28;
 
