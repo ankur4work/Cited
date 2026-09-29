@@ -2710,3 +2710,26 @@
  * is already `aria-hidden`.
  */
 .cited-reviews .cited-rate__label svg { pointer-events: none; }
+
+/*
+ * One review: keep the left edge, stop centring.
+ *
+ * Centring the summary and the toolbar was the right answer when the summary
+ * was a bare line of text and the single card was centred under it — two
+ * things floating in a row, so both floated together.
+ *
+ * It is the wrong answer now that the summary is a bordered panel spanning the
+ * block. A centred score inside a full-width box reads as a layout that failed
+ * to fill, and on a product with one review that is a shopper's first
+ * impression of the section. Everything sits on the same left edge as the
+ * heading instead — the edge the whole block was aligned to.
+ */
+.cited-reviews:has(.cited-reviews__list--one) .cited-summary-bar,
+.cited-reviews:has(.cited-reviews__list--one) .cited-toolbar {
+  justify-content: flex-start;
+}
+
+.cited-reviews:has(.cited-reviews__list--one) .cited-reviews__write { margin-left: auto; }
+
+.cited-reviews .cited-reviews__list--one { justify-content: start; }
+.cited-reviews .cited-reviews__list--one > li { margin-inline: 0; }

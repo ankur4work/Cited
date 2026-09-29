@@ -54,8 +54,26 @@
 {%- if rating_count > 0 -%}
   {{ 'cited-reviews.css' | asset_url | stylesheet_tag }}
 
+  {%- comment -%}
+    Shopify APPENDS a newly added app block to the end of its section, so a
+    rating added from our own "Add widget" button lands under the spec table,
+    above Related products — a screen and a half below the title our app says
+    it sits under. Dragging it up in the theme editor fixes that permanently
+    and costs nothing at runtime, which is why this is a setting rather than
+    unconditional: a merchant who deliberately put the rating beside Add to
+    cart must keep it there.
+
+    The rating itself is server-rendered either way. This moves markup that is
+    already on the page; it never fetches or draws anything, so with scripting
+    off the rating is still there, still crawlable, just lower down.
+  {%- endcomment -%}
+  {%- if block.settings.snap_to_title -%}
+    <script src="{{ 'cited-snap-title.js' | asset_url }}" defer></script>
+  {%- endif -%}
+
   <div
     class="cited-rating cited-rating--placed cited-rating--static"
+    {% if block.settings.snap_to_title %}data-cited-snap-title="{{ product.title | escape }}"{% endif %}
     style="
       --cited-star: {{ star_color }};
       --cited-text: {{ text_color }};
@@ -79,6 +97,13 @@
   "name": "Cited Star Rating",
   "target": "section",
   "settings": [
+    {
+      "type": "checkbox",
+      "id": "snap_to_title",
+      "label": "Move under the product title",
+      "default": true,
+      "info": "Shopify adds a new widget at the bottom of the section. Leave this on and it will sit under your product title instead. Turn it off to keep it exactly where you drag it."
+    },
     {
       "type": "text",
       "id": "anchor",

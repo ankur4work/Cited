@@ -457,7 +457,15 @@
         ceiling, so they take the middle of a wide section and drop below the
         score in a narrow one. See the summary-bar rules in the stylesheet.
       {%- endcomment -%}
-      {%- if rating_breakdown != blank -%}
+      {%- comment -%}
+        Three reviews before the histogram earns its place.
+
+        With one review it is five bars reading 100%, 0%, 0%, 0%, 0% — a chart
+        that restates a number already three inches to its left, and four empty
+        tracks that make a new product look like it failed rather than like it
+        is new. A distribution needs something to distribute.
+      {%- endcomment -%}
+      {%- if rating_breakdown != blank and rating_count >= 3 -%}
         <div class="cited-summary-bar__breakdown">
           {%- render 'cited-breakdown', breakdown: rating_breakdown, total: rating_count, scale_max: scale_max -%}
         </div>
