@@ -52,7 +52,14 @@ export function WidgetsView({
       <Layout>
         {embed && (
           <Layout.Section>
-            <Banner tone="info" title="Not sure where to start?">
+            {/*
+              Titled as the recommendation it is, not as a fallback for the
+              confused. This one toggle covers every product on any theme with
+              nothing to position, which makes it the right answer for almost
+              everyone — "Not sure where to start?" framed it as the option you
+              take when you have failed to understand the other seven.
+            */}
+            <Banner tone="info" title="Start here — one toggle, every product">
               <BlockStack gap="300">
                 <Text as="p" variant="bodySm">
                   {embed.description}
@@ -70,7 +77,12 @@ export function WidgetsView({
         <Layout.Section>
           <BlockStack gap="400">
             <Text as="h2" variant="headingMd">
-              Place them yourself
+              Or place widgets yourself
+            </Text>
+
+            <Text as="p" variant="bodySm" tone="subdued">
+              Optional, and only if you want a widget somewhere specific. Each one moves itself
+              to the spot described on its card; drag it in the theme editor to override that.
             </Text>
 
             {/*
