@@ -1,4 +1,29 @@
 import { z } from 'zod';
+import { REVIEW_REQUEST_CAP_PRO_DEFAULT } from './plan-limits';
+
+/*
+ * SERVER ONLY. Importing this file from a `'use client'` component — even
+ * transitively, even for one constant — bundles it for the browser, where
+ * `process.env` carries none of these values and `loadEnv()` below throws on
+ * import. The page then renders as Next's "Application error: a client-side
+ * exception has occurred", which names neither the file nor the reason.
+ *
+ * That happened: `lib/plans` imported this for a single number, `plans-view`
+ * imported `lib/plans`, and the Plans page was dead for every merchant while
+ * every server-rendered byte of it looked perfectly healthy.
+ *
+ * The check below cannot prevent the import — only a build-time guard
+ * (`import 'server-only'`) can, and that package is not installed here — but
+ * it replaces a zod dump about DATABASE_URL with a sentence naming the actual
+ * mistake. Constants a client needs belong in `lib/plan-limits`.
+ */
+if (typeof window !== 'undefined') {
+  throw new Error(
+    'lib/env was imported into a client bundle. It reads server-only ' +
+      'environment variables and cannot run in a browser — move the value you ' +
+      'need into lib/plan-limits, or pass it down from a server component.',
+  );
+}
 
 /**
  * The field definitions, kept as a bare ZodObject.
@@ -77,7 +102,7 @@ const EnvObject = z.object({
   // and Scale is uncapped, so this number is the whole substance of the middle
   // tier — raising it weakens the reason to move up, lowering it makes Pro feel
   // punitive to exactly the merchants growing into it.
-  REVIEW_REQUEST_CAP_PRO: z.coerce.number().int().positive().default(500),
+  REVIEW_REQUEST_CAP_PRO: z.coerce.number().int().positive().default(REVIEW_REQUEST_CAP_PRO_DEFAULT),
 
   // ── AI ─────────────────────────────────────────────────────
   // Optional: absent means the summary job logs and returns without writing
@@ -253,7 +278,7 @@ const BUILD_STUB: Env = {
   COMPANY_ADDRESS: 'build stub',
   SEND_SAFETY_GATE_THRESHOLD: 250,
   EMAIL_RATE_PER_STORE_PER_HOUR: 500,
-  REVIEW_REQUEST_CAP_PRO: 500,
+  REVIEW_REQUEST_CAP_PRO: REVIEW_REQUEST_CAP_PRO_DEFAULT,
   AI_MODEL_BULK: 'gpt-5.4-mini',
   AI_MODEL_REASONING: 'gpt-5.4',
   AI_BUDGET_CENTS_PER_STORE: 500,

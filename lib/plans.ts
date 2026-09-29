@@ -1,5 +1,16 @@
 import type { Plan } from '@prisma/client';
-import { env } from '@/lib/env';
+/*
+ * NOT `@/lib/env`, and this is load-bearing rather than tidiness.
+ *
+ * This module is imported by `app/_components/plans-view.tsx`, which is a
+ * `'use client'` component, so everything it pulls in is bundled for the
+ * BROWSER. `lib/env` validates the server environment at import time and
+ * throws when `DATABASE_URL` and the rest are absent — which, in a browser,
+ * they always are. The Plans page therefore threw on load and Next replaced it
+ * with "Application error: a client-side exception has occurred", for the sake
+ * of one number in one sentence.
+ */
+import { REVIEW_REQUEST_CAP_PRO_DEFAULT } from '@/lib/plan-limits';
 
 /**
  * The plan ladder, as merchants see it.
@@ -51,7 +62,7 @@ export const PLAN_TIERS: PlanTier[] = [
     tagline: 'Ask for reviews automatically, and make them sell.',
     inherits: 'Free',
     features: [
-      `Review request emails — up to ${env.REVIEW_REQUEST_CAP_PRO.toLocaleString()} a month, sent as your store`,
+      `Review request emails — up to ${REVIEW_REQUEST_CAP_PRO_DEFAULT.toLocaleString()} a month, sent as your store`,
       'Video reviews — shoppers film the product, hosted in your Shopify Files',
       'AI review summaries — pros, cons and sentiment by theme',
       'Review highlights — the most useful quotes, pulled from real reviews',
