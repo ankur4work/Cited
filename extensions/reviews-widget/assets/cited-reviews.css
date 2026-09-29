@@ -2693,3 +2693,20 @@
 .cited-reviews .cited-summary-bar__breakdown .cited-rating__row {
   font-size: calc(0.75 * var(--cited-rem));
 }
+
+/*
+ * The star graphic must not be the thing the click lands on.
+ *
+ * Each rating input is laid over its own star precisely so the click hits the
+ * input and native validation has a real control to complain about. Measured
+ * on the live page, the hit test at a star's centre returned
+ * `path → svg → label → input`: the SVG was on top, so the input was never the
+ * target and everything depended on label forwarding instead — which a theme
+ * can break, and did.
+ *
+ * `pointer-events: none` on the graphic makes the input the target again. It
+ * cannot make things worse: with the input beneath, the click lands on the
+ * input; without it, on the label, which forwards. The star is decoration and
+ * is already `aria-hidden`.
+ */
+.cited-reviews .cited-rate__label svg { pointer-events: none; }

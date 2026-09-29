@@ -101,52 +101,212 @@
    * this work everywhere else.
    */
   var summary = embed.querySelector('[data-cited-summary]');
-  var title = null;
+  var wanted = (embed.getAttribute('data-cited-title') || '').trim();
 
-  if (summary) {
-    var wanted = (embed.getAttribute('data-cited-title') || '').trim();
+  /*
+   * The buy form is the one landmark every product page has, whatever the
+   * theme calls its classes. It is used to break ties: a theme may carry
+   * several elements that look like the title — a breadcrumb, a sticky
+   * add-to-cart bar, a quick-view in a related-products carousel — and the
+   * one that matters is the one in the same column as the thing you buy with.
+   */
+  function buyForm() {
+    return document.querySelector('form[action*="/cart/add"]');
+  }
 
-    title = first([
+  function nearBuyForm(el) {
+    var form = buyForm();
+    if (!form || !el) return false;
+    var node = el.parentElement;
+    for (var depth = 0; node && depth < 6; depth++) {
+      if (node.contains(form)) return true;
+      node = node.parentElement;
+    }
+    return false;
+  }
+
+  /*
+   * Re-found on every attempt rather than cached.
+   *
+   * A theme that re-renders its product column replaces the title NODE, so a
+   * reference taken at defer time points at detached markup a second later —
+   * and inserting next to a detached element puts the rating nowhere at all.
+   */
+  function findTitle() {
+    var candidates = [];
+    var byClass = [
       '.product__title h1',
       '.product__title',
       '.product-single__title',
       '.product-title',
       '.product-meta__title',
       '[data-product-title]'
-    ]);
+    ];
 
-    if (!title && wanted) {
-      var scope = document.querySelector('main, #MainContent') || document.body;
-      var headings = scope.querySelectorAll('h1, h2');
-      var spare = null;
-
-      for (var h = 0; h < headings.length; h++) {
-        if ((headings[h].textContent || '').trim() !== wanted) continue;
-        // Same responsive-duplicate trap as above, and this is the pass that
-        // fell into it: the mobile copy of the title comes first in the DOM.
-        if (visible(headings[h])) {
-          title = headings[h];
-          break;
-        }
-        if (!spare) spare = headings[h];
+    for (var i = 0; i < byClass.length; i++) {
+      var hit = null;
+      try {
+        hit = document.querySelectorAll(byClass[i]);
+      } catch (e) {
+        hit = null;
       }
-
-      if (!title) title = spare;
+      if (!hit) continue;
+      for (var j = 0; j < hit.length; j++) candidates.push(hit[j]);
     }
 
-    // Last resort: the first h1 in the main content. On a product page that is
-    // the product title in every theme that is not actively misusing h1.
-    if (!title) title = first(['main h1', '#MainContent h1', 'h1']);
+    /*
+     * By text, because finding the title by CLASS cannot be made reliable:
+     * every theme names it differently and a custom theme names it something
+     * nobody has seen. The server knows the product's exact title, so the
+     * element can be found by what it says instead.
+     */
+    if (wanted) {
+      var scope = document.querySelector('main, #MainContent') || document.body;
+      var headings = scope.querySelectorAll('h1, h2');
+      for (var h = 0; h < headings.length; h++) {
+        if ((headings[h].textContent || '').trim() === wanted) candidates.push(headings[h]);
+      }
+    }
 
-    if (title && title.parentNode) {
+    // Last resort. On a product page the first h1 in main is the title in
+    // every theme that is not actively misusing h1.
+    var spares = document.querySelectorAll('main h1, #MainContent h1, h1');
+    for (var s = 0; s < spares.length; s++) candidates.push(spares[s]);
+
+    /*
+     * Best match wins, in this order, and the order is the whole point:
+     *
+     *   visible AND beside the buy form  — the product title, certainly
+     *   visible                          — a title, probably the right one
+     *   anything                         — better than abandoning it after
+     *                                      the footer
+     *
+     * Responsive themes ship the title TWICE, once in a mobile header and
+     * once in a desktop one, hiding whichever does not apply. Taking the
+     * first in document order had a coin flip's chance of inserting the
+     * rating into the `display: none` copy, where it measured 0x0 and nobody
+     * ever saw it.
+     */
+    var visibleHit = null;
+    for (var c = 0; c < candidates.length; c++) {
+      var el = candidates[c];
+      if (!el || !el.parentNode) continue;
+      if (visible(el)) {
+        if (nearBuyForm(el)) return el;
+        if (!visibleHit) visibleHit = el;
+      }
+    }
+    if (visibleHit) return visibleHit;
+
+    for (var f = 0; f < candidates.length; f++) {
+      if (candidates[f] && candidates[f].parentNode) return candidates[f];
+    }
+    return null;
+  }
+
+  var anchoredTo = null;
+
+  /*
+   * The cheap check, run on every DOM mutation on the page: is the rating
+   * still attached, still after the title we put it after, and is that title
+   * still in the document? Three pointer comparisons and no DOM query, which
+   * is what makes a permanent observer affordable.
+   */
+  function wellPlaced() {
+    return (
+      summary.isConnected &&
+      anchoredTo &&
+      anchoredTo.isConnected &&
+      anchoredTo.nextSibling === summary
+    );
+  }
+
+  function placeSummary() {
+    if (!summary) return true;
+    if (wellPlaced()) return true;
+
+    var title = findTitle();
+    if (!title || !title.parentNode) return false;
+
+    if (title.nextSibling !== summary) {
       // After the title's own element, not after its wrapper: the wrapper
       // frequently contains the price and the buy button too, and inserting
       // after it would put the rating below the add-to-cart.
       title.parentNode.insertBefore(summary, title.nextSibling);
       summary.classList.add('cited-rating--placed');
     }
-    // If no title was found the summary simply stays inside the block, which
-    // is where it renders without this script at all.
+
+    anchoredTo = title;
+    return true;
+  }
+
+  placeSummary();
+
+  /*
+   * ── Stay there ────────────────────────────────────────────────────────
+   *
+   * Placing once, at defer time, assumes the product column it inserted into
+   * is the one that will still be on screen a second later. Plenty of themes
+   * break that assumption: a `<product-info>` custom element that upgrades
+   * and re-renders, a variant picker that swaps the whole block on selection,
+   * a section rendered by the Section Rendering API. Each of those replaces
+   * the title, and the rating — which is OUR element, not part of the markup
+   * the theme re-rendered — is left behind wherever the old column ended,
+   * which on a long product page is far below the fold.
+   *
+   * So watch, and put it back.
+   *
+   * This observer does NOT expire. A ten-second window was the first attempt
+   * and it is worthless: the re-render that matters most is a variant change,
+   * which happens whenever the shopper clicks, minutes after load. Tested by
+   * stranding the rating at the end of <body> and re-rendering the column out
+   * from under it — with the timeout, both stayed broken.
+   *
+   * Affordable because the work per mutation batch is `wellPlaced()`: three
+   * pointer comparisons, no DOM query. Only when that fails does anything
+   * search the document. Mutations are coalesced to one rAF, and our own
+   * insertion is a no-op on the next pass rather than a loop.
+   */
+  if (summary && typeof MutationObserver === 'function') {
+    var queued = false;
+    /*
+     * A theme that re-places the rating itself on every mutation would fight
+     * this forever and burn a core doing it. Fifty corrections is far beyond
+     * any legitimate re-render — a page doing more than that has a conflict no
+     * amount of insisting will win, and a rating in the wrong place is better
+     * than a hot laptop.
+     */
+    var corrections = 0;
+
+    var observer = new MutationObserver(function () {
+      if (queued) return;
+      queued = true;
+
+      requestAnimationFrame(function () {
+        queued = false;
+        if (wellPlaced()) return;
+
+        try {
+          placeSummary();
+        } catch (e) {
+          /* Presentation only. The rating is in the server's HTML regardless. */
+        }
+
+        if (++corrections > 50) observer.disconnect();
+      });
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    // Worth a check even if nothing mutated in between: the theme finishing
+    // its own scripts, and a section that waits for load before rendering.
+    window.addEventListener('load', function () {
+      try {
+        placeSummary();
+      } catch (e) {
+        /* as above */
+      }
+    });
   }
 
   /* ── 2. The rest of the block, after the product section ───────────── */

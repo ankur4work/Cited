@@ -87,6 +87,29 @@
     var status = form.querySelector('[data-cited-status]');
     var button = form.querySelector('button[type="submit"]');
 
+    /*
+     * No rating, no round trip.
+     *
+     * `required` on the radio group is supposed to make this unreachable, and
+     * on most themes it does. It is not reliable enough to lean on: a theme
+     * whose own CSS hides radios stops the browser being able to focus the
+     * invalid control, and browsers disagree about what to do then — some
+     * block the submit silently, some submit anyway. A merchant reported
+     * exactly that, and the result was a full-page server error reading
+     * "Choose a rating" for someone who was looking at the stars.
+     *
+     * Caught here, the answer appears beside the form with everything they
+     * typed still in it.
+     */
+    if (!form.querySelector('input[name="rating"]:checked')) {
+      setStatus(status, 'Please choose a star rating.', 'error');
+      var stars = form.querySelector('.cited-rate__stars');
+      if (stars && stars.scrollIntoView) stars.scrollIntoView({ block: 'center' });
+      var firstStar = form.querySelector('.cited-rate__input');
+      if (firstStar && firstStar.focus) firstStar.focus();
+      return;
+    }
+
     setStatus(status, 'Sending…');
     if (button) button.disabled = true;
 
@@ -131,11 +154,58 @@
       .catch(function () {
         // Network failure, or the proxy is unreachable. Fall back to a normal
         // submit rather than losing what they wrote.
+        //
+        // `form.submit()` and not `requestSubmit()` on purpose — but note what
+        // that costs: submit() runs NO constraint validation and fires no
+        // submit event, so anything the guard above would have caught goes
+        // straight to the server and comes back as a full page. The guard
+        // above is what makes that acceptable: by here, a rating exists.
         setStatus(status, '');
         form.removeAttribute('data-cited-form');
         form.submit();
       });
   });
+
+  /*
+   * ── Make a click on a star set the rating ──
+   *
+   * The strip is a radio group with each label drawn as a star, and an
+   * invisible input laid over each one so the browser has something focusable
+   * to validate. Clicking the star is therefore supposed to work twice over:
+   * the click lands on the input, and failing that the label forwards it.
+   *
+   * Both of those depend on the theme not interfering, and a theme absolutely
+   * can interfere — `pointer-events`, a stacking context, or its own
+   * `input[type="radio"] { display: none }` are all common and all break one
+   * or both. The symptom is the worst kind: the shopper clicks a star, the
+   * star lights up under the cursor because that is pure CSS hover, and
+   * nothing is actually selected. They then get told to pick a rating they
+   * are certain they picked.
+   *
+   * So set it explicitly. Capture phase, because a theme that stops
+   * propagation on click inside its product form would otherwise take this
+   * with it. Additive as ever: with scripting off the label and the overlay
+   * are unchanged, and this only ever agrees with what they would have done.
+   */
+  document.addEventListener(
+    'click',
+    function (event) {
+      var node = event.target;
+      if (!node || !node.closest) return;
+
+      var label = node.closest('.cited-rate__label');
+      if (!label) return;
+
+      var id = label.getAttribute('for');
+      var input = id ? document.getElementById(id) : null;
+      if (!input || input.checked) return;
+
+      input.checked = true;
+      // Themes and our own code listen for change, never for the click.
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    },
+    true
+  );
 })();
 
 /*
