@@ -52,8 +52,25 @@
 {%- if reviews_list != blank -%}
   {{ 'cited-reviews.css' | asset_url | stylesheet_tag }}
 
+  {%- comment -%}
+    Same reason as the Star Rating block: Shopify appends a newly added app
+    block to the END of its section, so a snippet added from our own "Add
+    widget" button lands under the spec table rather than "next to the Add to
+    cart button", which is what the app's gallery promises it does.
+
+    It anchors BEFORE the buy form, never inside it — a quote sitting between
+    the variant picker and the submit button is inside markup the theme's own
+    script re-renders on every variant change.
+  {%- endcomment -%}
+  <script src="{{ 'cited-place-widget.js' | asset_url }}" defer></script>
+
   <div
     class="cited-snippet"
+    data-cited-widget="snippet"
+    {% if block.settings.snap_to_cart %}
+      data-cited-snap="cart"
+      data-cited-title="{{ product.title | escape }}"
+    {% endif %}
     style="
       --cited-star: {{ star_color }};
       --cited-text: {{ text_color }};
@@ -102,6 +119,13 @@
   "name": "Cited Review Snippet",
   "target": "section",
   "settings": [
+    {
+      "type": "checkbox",
+      "id": "snap_to_cart",
+      "label": "Move next to the Add to cart button",
+      "default": true,
+      "info": "Shopify adds a new widget at the bottom of the section. Leave this on and it will sit just above your Add to cart button instead. Turn it off to keep it exactly where you drag it."
+    },
     {
       "type": "paragraph",
       "content": "How many quotes to show, along with colours and text, are set in the Cited app under Widgets → Customize, so every Cited widget on your store matches."

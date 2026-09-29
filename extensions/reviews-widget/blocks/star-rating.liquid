@@ -67,13 +67,15 @@
     already on the page; it never fetches or draws anything, so with scripting
     off the rating is still there, still crawlable, just lower down.
   {%- endcomment -%}
-  {%- if block.settings.snap_to_title -%}
-    <script src="{{ 'cited-snap-title.js' | asset_url }}" defer></script>
-  {%- endif -%}
+  <script src="{{ 'cited-place-widget.js' | asset_url }}" defer></script>
 
   <div
     class="cited-rating cited-rating--placed cited-rating--static"
-    {% if block.settings.snap_to_title %}data-cited-snap-title="{{ product.title | escape }}"{% endif %}
+    data-cited-widget="rating"
+    {% if block.settings.snap_to_title %}
+      data-cited-snap="title"
+      data-cited-title="{{ product.title | escape }}"
+    {% endif %}
     style="
       --cited-star: {{ star_color }};
       --cited-text: {{ text_color }};

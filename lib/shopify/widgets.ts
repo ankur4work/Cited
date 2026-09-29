@@ -105,6 +105,21 @@ export interface WidgetDef {
 
 export const WIDGETS: WidgetDef[] = [
   {
+    id: 'auto-embed',
+    name: 'Automatic placement',
+    description:
+      'Start here. One toggle covers every product: the reviews section goes below the product, the rating under your product title. Nothing to position, and it works on themes that do not accept app blocks.',
+    handle: 'reviews-embed',
+    kind: 'embed',
+    where: 'On every product page at once, with nothing to place',
+    target: 'newAppsSection',
+    points: [
+      'Every product at once — no per-template setup',
+      'Works on any theme',
+      'Turns itself off where you placed a block yourself',
+    ],
+  },
+  {
     id: 'review-display',
     name: 'Review Display',
     description:
@@ -201,21 +216,6 @@ export const WIDGETS: WidgetDef[] = [
     where: "On a page template of its own — a browsable grid",
     target: 'newAppsSection',
     points: ['Add to any page template', 'Reflows to the space your theme gives it', 'Store rating at the top'],
-  },
-  {
-    id: 'auto-embed',
-    name: 'Automatic placement',
-    description:
-      'One toggle, every product. Puts the rating under your product title and the reviews below the product — no placement step, and it works on themes that do not accept app blocks.',
-    handle: 'reviews-embed',
-    kind: 'embed',
-    where: "On every product page at once, with nothing to place",
-    target: 'newAppsSection',
-    points: [
-      'Works on any theme',
-      'Nothing to position by hand',
-      'Turns itself off where you placed a block yourself',
-    ],
   },
 ];
 
