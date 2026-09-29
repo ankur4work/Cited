@@ -104,6 +104,27 @@
   var wanted = (embed.getAttribute('data-cited-title') || '').trim();
 
   /*
+   * If the merchant has ALSO added the Star Rating block, this summary is a
+   * second copy of it and the page shows "5.0 ★★★★★ 1 review" twice, side by
+   * side, under the title.
+   *
+   * The dedupe above catches the same clash for the full reviews block but
+   * looks for `[data-cited-product]`, which the rating block does not carry —
+   * so for as long as the block sat at the bottom of the section, the
+   * duplication was simply too far apart to notice. It became obvious the
+   * moment the block started placing itself under the title too.
+   *
+   * The block wins: the merchant put it somewhere on purpose, and it is the
+   * copy they can style and configure. Removing our copy rather than hiding
+   * it keeps one rating in the markup, which matters because two would also
+   * be two for anything reading the page.
+   */
+  if (summary && document.querySelector('.cited-rating--static')) {
+    summary.parentNode.removeChild(summary);
+    summary = null;
+  }
+
+  /*
    * The buy form is the one landmark every product page has, whatever the
    * theme calls its classes. It is used to break ties: a theme may carry
    * several elements that look like the title — a breadcrumb, a sticky
