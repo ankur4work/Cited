@@ -20,7 +20,7 @@ import {
   MAX_VIDEO_BYTES,
   MAX_VIDEOS_PER_REVIEW,
 } from '@/lib/shopify/files';
-import { enqueueMediaBackfill } from '@/jobs/enqueue';
+import { enqueueMediaBackfill, enqueueReviewSyndication } from '@/jobs/enqueue';
 import { loadEntitlement, isPaid } from '@/lib/entitlements';
 
 export const runtime = 'nodejs';
@@ -475,6 +475,33 @@ export async function POST(req: NextRequest) {
 
     if (videoCount > 0) {
       await enqueueMediaBackfill({ storeId: store.id, reviewId: review.id });
+    }
+
+    /*
+     * Re-project, because the projection already ran WITHOUT this media.
+     *
+     * `createReview` queues the review's syndication as its last act, and the
+     * worker picks it up in milliseconds — while the photos are still being
+     * uploaded by the lines above. The metaobject is therefore written with an
+     * empty `media_urls`, and nothing revisited it: the media backfill only
+     * covers rows whose URL was still null, which is the VIDEO case. A photo,
+     * which usually resolves inside the upload request, produced a row with a
+     * perfectly good URL that no projection ever read.
+     *
+     * So every photo ever submitted came back in the response — the shopper
+     * saw it attached — and then never appeared on the storefront for anyone
+     * else. It looked like an upload bug and was a sequencing one.
+     *
+     * `repairKey` is what makes this land: the plain job id was used minutes
+     * ago by the run that is the reason we are here, and BullMQ silently drops
+     * an add whose id matches a completed job.
+     */
+    if (photoUrls.length > 0 || videoCount > 0) {
+      await enqueueReviewSyndication({
+        storeId: store.id,
+        reviewId: review.id,
+        repairKey: 'media',
+      });
     }
 
     const pending = review.status !== 'PUBLISHED';
