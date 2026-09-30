@@ -149,6 +149,19 @@ RUN ./node_modules/.bin/prisma generate
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
+# The rest of scripts/, because the runner could not execute ANY of them.
+#
+# Only entrypoint.sh was copied, so `scripts/health-alert.ts` — scheduled in
+# Coolify to check this deployment every ten minutes — failed thirteen runs in
+# a row with ERR_MODULE_NOT_FOUND before anyone looked at the execution log. A
+# monitor that has never once succeeded is worse than no monitor: it reports
+# nothing and implies everything is watched.
+#
+# It also explains why every operational script here is unrunnable in
+# production, which is how `resyndicate.ts` came to be replaced by an HTTP
+# route: the script was never in the image to run.
+COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
+
 USER nextjs
 EXPOSE 3000
 
