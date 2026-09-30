@@ -2,12 +2,38 @@ import { Queue } from 'bullmq';
 import IORedis from 'ioredis';
 import { env } from '@/lib/env';
 
-// `lazyConnect: true` — do NOT open a TCP connection at module import.
-// Next.js evaluates route modules during build-time analysis, when Redis
-// isn't running; an eager connect turns every build into a failure.
+/*
+ * Lazy ONLY during the build, eager everywhere else.
+ *
+ * `lazyConnect` exists here for one reason: Next.js evaluates route modules
+ * during build-time analysis, when Redis is not running, and an eager connect
+ * turns every build into a failure. That reason applies to the build and to
+ * nothing else — and paying for it at runtime is what cost the worker three
+ * days of silence.
+ *
+ * A lazy client has status `wait`, and BullMQ answers that status with a bare
+ * `client.connect()`: ONE attempt, whose promise rejects with
+ * `Connection is closed.` if the socket dies before the handshake, cached as
+ * that connection's `client` forever. In the worker that killed the consumers
+ * outright. Here it is narrower and just as permanent — every Queue in the
+ * process is poisoned, so every enqueue fails until someone restarts the
+ * container: reviews written and never syndicated, webhooks accepted and never
+ * ingested.
+ *
+ * Eager, the client is `connecting` at that moment instead, which takes the
+ * branch that waits for `ready`, and ioredis's retry strategy carries it
+ * across the outage.
+ *
+ * `NEXT_PHASE` is Next's own signal, already used for the same purpose in
+ * lib/env. A dev server connects eagerly too, which is correct: a dev whose
+ * Redis is down should find out when they start the app, not when a webhook
+ * silently fails to enqueue an hour later.
+ */
+const IS_BUILD = process.env.NEXT_PHASE === 'phase-production-build';
+
 export const connection = new IORedis(env.REDIS_URL, {
   maxRetriesPerRequest: null,
-  lazyConnect: true,
+  lazyConnect: IS_BUILD,
 });
 
 /**

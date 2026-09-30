@@ -31,6 +31,29 @@ export default function Error({
     // Also to the browser console, for anyone who does open it, and with the
     // digest attached so it lines up with the server side.
     console.error('[cited] client error', { message: error.message, digest: error.digest });
+
+    /*
+     * And to the server, because a console is somewhere nobody looks. A
+     * hydration failure never reaches our logs on its own — the Plans page
+     * threw for every merchant on every visit and left no trace anywhere,
+     * which is why it was found by elimination rather than by looking.
+     *
+     * `keepalive` so the report survives the merchant immediately navigating
+     * away from a broken page, and failure is swallowed: an error page that
+     * throws while reporting an error helps nobody.
+     */
+    const url = new URL(window.location.href);
+    fetch('/api/client-error', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      keepalive: true,
+      body: JSON.stringify({
+        message: error.message,
+        digest: error.digest,
+        path: url.pathname,
+        shop: url.searchParams.get('shop'),
+      }),
+    }).catch(() => {});
   }, [error]);
 
   return (
