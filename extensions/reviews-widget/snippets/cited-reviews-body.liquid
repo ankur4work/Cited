@@ -174,7 +174,16 @@
 
   if show_media and reviews_list != blank
     for review in reviews_list limit: per_page
-      for media_url in review.media_urls
+      # `.value` first, then the field itself. A metaobject field reached
+      # through a reference list arrives either as the value or as the wrapper
+      # around it, and iterating the wrapper yields NOTHING while raising
+      # nothing: `review.media_urls != blank` is true, so the markup renders
+      # and the loop inside it produces no items. That is what shipped — an
+      # empty `<div class="cited-review__media">` on every review with a photo,
+      # while the same photo rendered fine in the store-reviews card, which
+      # reads it from the digest instead.
+      assign review_media = review.media_urls.value | default: review.media_urls
+      for media_url in review_media
         assign is_video = false
         if media_url contains '/cdn/shop/videos/' or media_url contains '.mp4' or media_url contains '.webm' or media_url contains '.mov'
           assign is_video = true
@@ -754,9 +763,15 @@
             an <img> is a broken image — which is the failure mode to prefer
             over guessing wrong in the other direction.
           {%- endcomment -%}
-          {%- if show_media and review.media_urls != blank -%}
+          {%- comment -%}
+            Resolved through `.value` first — see the gallery loop above. The
+            wrapper is truthy but empty when iterated, so the guard passed, the
+            container rendered, and not one image came out of it.
+          {%- endcomment -%}
+          {%- assign card_media = review.media_urls.value | default: review.media_urls -%}
+          {%- if show_media and card_media != blank -%}
             <div class="cited-review__media">
-              {%- for media_url in review.media_urls limit: 5 -%}
+              {%- for media_url in card_media limit: 5 -%}
                 {%- liquid
                   assign is_video = false
                   if media_url contains '/cdn/shop/videos/'
@@ -1109,12 +1124,23 @@
 </section>
 
 {%- comment -%}
-  Submit without a reload. Loaded only when the form is on the page, and
-  purely additive: the form works as a plain POST without it.
+  Submit without a reload, and answer a missing rating beside the stars.
+
+  Loaded whenever this section renders, NOT only when the form is — the gate
+  used to be `enable_form and customer`, and every time that evaluated false
+  while a form was nonetheless on the page, the page silently lost its
+  enhancement: a submit became a plain POST, so the shopper got a full page of
+  the app proxy's own output instead of their review appearing in place, and a
+  missing rating became a page reading "Choose a rating" rather than a line
+  under the stars. Both were reported as bugs in the form; neither was.
+
+  The conditions this file is really guarding against — no form, no section,
+  no JavaScript — it now checks for itself: the listeners match on
+  `[data-cited-form]`, so with nothing to match they never fire, and the file
+  is a few KB served from Shopify's CDN. That is a far smaller cost than a
+  storefront that quietly stops enhancing.
 {%- endcomment -%}
-{%- if enable_form and customer -%}
-  <script src="{{ 'cited-reviews-form.js' | asset_url }}" defer></script>
-{%- endif -%}
+<script src="{{ 'cited-reviews-form.js' | asset_url }}" defer></script>
 
 {%- comment -%}
   ── Structured data ──
