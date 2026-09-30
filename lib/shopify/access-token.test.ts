@@ -7,8 +7,25 @@ const refreshOfflineAccessToken = vi.fn();
 vi.mock('../prisma', () => ({
   prisma: { store: { findUnique: (...a: unknown[]) => findUnique(...a), update: (...a: unknown[]) => update(...a) } },
 }));
+/*
+ * The mock has to carry the real error class, not just the function: the
+ * module under test narrows with `instanceof`, and a mock that omits it turns
+ * the branch into a TypeError at exactly the moment it matters.
+ */
+class TokenGrantRejectedError extends Error {
+  constructor(
+    public readonly shop: string,
+    public readonly status: number,
+    operation: string,
+  ) {
+    super(`${operation} rejected for ${shop} (HTTP ${status})`);
+    this.name = 'TokenGrantRejectedError';
+  }
+}
+
 vi.mock('./token-exchange', () => ({
   refreshOfflineAccessToken: (...a: unknown[]) => refreshOfflineAccessToken(...a),
+  TokenGrantRejectedError,
 }));
 
 const { getAccessToken, needsReauth, ReauthRequiredError } = await import('./access-token');
@@ -142,5 +159,68 @@ describe('needsReauth', () => {
 
   it('is true with no token at all', () => {
     expect(needsReauth({ ...healthy, accessToken: null })).toBe(true);
+  });
+});
+
+/*
+ * Written after ke5uzu-8s.myshopify.com spent days failing its token refresh
+ * with a 403 and dead-lettering jobs every fifteen minutes: three attempts
+ * with backoff, then "manual intervention required", then the same again.
+ *
+ * Nothing about that store was fixable by retrying. A 403 from the token
+ * endpoint means the app was uninstalled or the authorization revoked — but
+ * every non-2xx threw the same generic `Error: refresh failed: ${status}`, so
+ * a revoked grant was indistinguishable from a 500 and was treated like one.
+ *
+ * The conversion below is what lets the job layer stop: `ReauthRequiredError`
+ * is documented as "stop, not retry", and the worker turns it into BullMQ's
+ * UnrecoverableError.
+ */
+describe('a grant Shopify has rejected', () => {
+  it('becomes ReauthRequiredError, not a retryable failure', async () => {
+    findUnique.mockResolvedValue(
+      storeRow({ accessTokenExpiresAt: new Date(Date.now() - MINUTE) }),
+    );
+    refreshOfflineAccessToken.mockRejectedValue(
+      new TokenGrantRejectedError('x.myshopify.com', 403, 'Token refresh'),
+    );
+
+    const err = await getAccessToken('s1').catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ReauthRequiredError);
+    expect((err as InstanceType<typeof ReauthRequiredError>).reason).toBe('refresh-rejected');
+    expect((err as InstanceType<typeof ReauthRequiredError>).shopDomain).toBe('x.myshopify.com');
+  });
+
+  it('does not overwrite the stored credentials on the way out', async () => {
+    findUnique.mockResolvedValue(
+      storeRow({ accessTokenExpiresAt: new Date(Date.now() - MINUTE) }),
+    );
+    refreshOfflineAccessToken.mockRejectedValue(
+      new TokenGrantRejectedError('x.myshopify.com', 403, 'Token refresh'),
+    );
+
+    await getAccessToken('s1').catch(() => {});
+
+    // The row is the only record of what this store once had; a failed refresh
+    // must not half-write over it.
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  /*
+   * A 500 or a 429 is the opposite case and must stay retryable — classifying
+   * everything as terminal would turn a Shopify blip into a store that stops
+   * syncing until someone notices.
+   */
+  it('leaves a transient failure retryable', async () => {
+    findUnique.mockResolvedValue(
+      storeRow({ accessTokenExpiresAt: new Date(Date.now() - MINUTE) }),
+    );
+    refreshOfflineAccessToken.mockRejectedValue(new Error('Token refresh failed: 503'));
+
+    const err = await getAccessToken('s1').catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(ReauthRequiredError);
   });
 });
