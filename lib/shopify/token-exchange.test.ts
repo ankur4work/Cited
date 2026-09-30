@@ -4,6 +4,7 @@ import {
   refreshOfflineAccessToken,
   exchangeOfflineAccessToken,
   NonExpiringTokenError,
+  TokenGrantRejectedError,
 } from './token-exchange';
 
 /**
@@ -96,12 +97,24 @@ describe('exchangeAuthorizationCode', () => {
     ).rejects.toBeInstanceOf(NonExpiringTokenError);
   });
 
-  it('throws on a non-2xx response', async () => {
+  /*
+   * 400/401/403 are the grant being refused, not the request failing, and the
+   * distinction is what stops a caller retrying. A store whose app had been
+   * uninstalled produced a bare `Error: refresh failed: 403`, which reads as
+   * retryable — so the job ran three attempts, dead-lettered itself "for
+   * manual intervention", and did it again on the next schedule for days.
+   */
+  it('rejects the grant, not the request, on 4xx', async () => {
     mockFetch({ error: 'invalid_request' }, false);
 
-    await expect(
-      exchangeAuthorizationCode({ shop: 'x.myshopify.com', code: 'abc' }),
-    ).rejects.toThrow(/Code exchange failed: 400/);
+    const err = await exchangeAuthorizationCode({
+      shop: 'x.myshopify.com',
+      code: 'abc',
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(TokenGrantRejectedError);
+    expect((err as TokenGrantRejectedError).status).toBe(400);
+    expect((err as TokenGrantRejectedError).shop).toBe('x.myshopify.com');
   });
 });
 

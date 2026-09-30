@@ -1,7 +1,7 @@
 import { prisma } from '../prisma';
 import { logger } from '../logger';
 import { decrypt, encrypt } from '../crypto';
-import { refreshOfflineAccessToken } from './token-exchange';
+import { refreshOfflineAccessToken, TokenGrantRejectedError } from './token-exchange';
 
 /**
  * How long before true expiry we refresh.
@@ -16,12 +16,15 @@ const REFRESH_MARGIN_MS = 5 * 60 * 1000;
  * The store cannot talk to Shopify and no amount of retrying will change that
  * — a merchant has to re-authorize.
  *
- * Three ways to land here, all terminal without human action:
+ * Four ways to land here, all terminal without human action:
  *   - no access token at all (row created before exchange, or purged by redact)
  *   - a LEGACY non-expiring token: `accessTokenExpiresAt` null with a token
  *     present. The Admin API 403s these and no refresh token was ever issued,
  *     so there is nothing to refresh from.
  *   - the refresh token itself expired (90 days) or is missing.
+ *   - Shopify REJECTED the refresh with 400/401/403: the app was uninstalled
+ *     or the authorization revoked, so the token is no longer one Shopify will
+ *     honour whatever its stored expiry says.
  *
  * Callers must treat this as "stop", not "retry": jobs should give up and let
  * the reconnect prompt in the UI do its work.
@@ -29,7 +32,13 @@ const REFRESH_MARGIN_MS = 5 * 60 * 1000;
 export class ReauthRequiredError extends Error {
   constructor(
     public readonly shopDomain: string,
-    public readonly reason: 'no-token' | 'legacy-non-expiring' | 'no-refresh-token' | 'refresh-expired',
+    public readonly reason:
+      | 'no-token'
+      | 'legacy-non-expiring'
+      | 'no-refresh-token'
+      | 'refresh-expired'
+      // Shopify refused the refresh outright: uninstalled, or revoked.
+      | 'refresh-rejected',
   ) {
     super(`${shopDomain} must re-authorize (${reason})`);
     this.name = 'ReauthRequiredError';
@@ -112,7 +121,25 @@ async function refreshAndStore(
   shopDomain: string,
   refreshToken: string,
 ): Promise<string> {
-  const issued = await refreshOfflineAccessToken({ shop: shopDomain, refreshToken });
+  /*
+   * A grant Shopify has rejected becomes the error the job layer stops on.
+   *
+   * Without this it surfaced as a bare `Error: refresh failed: 403`, which is
+   * retryable-looking, so every scheduled job for an uninstalled store ran
+   * three attempts with backoff and then filed itself in the dead-letter queue
+   * "for manual intervention" — on repeat, for days. `ReauthRequiredError` is
+   * documented as "stop, not retry", and this is exactly that case: the
+   * merchant has to re-authorize and no amount of our trying substitutes.
+   */
+  let issued;
+  try {
+    issued = await refreshOfflineAccessToken({ shop: shopDomain, refreshToken });
+  } catch (err) {
+    if (err instanceof TokenGrantRejectedError) {
+      throw new ReauthRequiredError(shopDomain, 'refresh-rejected');
+    }
+    throw err;
+  }
 
   await prisma.store.update({
     where: { id: storeId },

@@ -51,6 +51,30 @@ export class NonExpiringTokenError extends Error {
   }
 }
 
+/**
+ * Shopify refused the grant itself — 400, 401 or 403 from the token endpoint.
+ *
+ * Distinct from a failed request because the remedy is entirely different:
+ * nothing we do on our own retries it back to life. The app has been
+ * uninstalled, the authorization revoked, or the refresh token is no longer
+ * one Shopify recognises, and only the merchant re-authorizing changes that.
+ *
+ * `lib/shopify/access-token` turns this into `ReauthRequiredError`, which the
+ * job layer already knows to stop on. The status travels with it so an
+ * operator reading a log line can tell "revoked" from "uninstalled" without
+ * reproducing the call.
+ */
+export class TokenGrantRejectedError extends Error {
+  constructor(
+    public readonly shop: string,
+    public readonly status: number,
+    operation: string,
+  ) {
+    super(`${operation} rejected for ${shop} (HTTP ${status}) — the merchant must re-authorize`);
+    this.name = 'TokenGrantRejectedError';
+  }
+}
+
 function assertExpiring(shop: string, json: ExchangeResponse): IssuedToken {
   if (!json.expires_in || !json.refresh_token) {
     logger.error(
@@ -98,6 +122,26 @@ async function postOAuth(
     // Deliberately does NOT log the code or refresh token in the request —
     // both are bearer credentials, and logs are where secrets leak.
     logger.error({ shop, status: res.status, body: text.slice(0, 300) }, `${what} failed`);
+
+    /*
+     * A rejected grant is not a failed request.
+     *
+     * Everything here used to throw the same generic Error, so a 403 — the
+     * merchant uninstalled, or the authorization was revoked — was
+     * indistinguishable from a 500. The caller retried it, three times with
+     * backoff, then filed the job in the dead-letter queue "for manual
+     * intervention". For a store that can never succeed again, and on a
+     * schedule, so the DLQ filled with the same impossible job forever. One
+     * store did exactly that for days before anyone looked.
+     *
+     * 400/401/403 from the token endpoint all mean the same thing: this grant
+     * is gone and only the merchant can restore it. Anything else — 429, 5xx,
+     * a network blip — is worth retrying and keeps the generic error.
+     */
+    if (res.status === 400 || res.status === 401 || res.status === 403) {
+      throw new TokenGrantRejectedError(shop, res.status, what);
+    }
+
     throw new Error(`${what} failed: ${res.status}`);
   }
 

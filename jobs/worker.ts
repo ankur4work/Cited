@@ -1,4 +1,4 @@
-import { Worker, type Job } from 'bullmq';
+import { Worker, UnrecoverableError, type Job } from 'bullmq';
 import {
   connection,
   createWorkerConnection,
@@ -33,6 +33,7 @@ import { emailRequestProcessor } from './processors/email-request';
 import { moveToDlq } from './dlq';
 import { logger } from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
+import { ReauthRequiredError } from '@/lib/shopify/access-token';
 
 /**
  * Background worker.
@@ -54,6 +55,38 @@ import { prisma } from '@/lib/prisma';
  */
 const workerConnection = createWorkerConnection();
 
+/**
+ * Stop, rather than retry, when only the merchant can fix it.
+ *
+ * `ReauthRequiredError` means Shopify will not honour this store's token
+ * again: uninstalled, revoked, or a refresh token past its ninety days. It is
+ * documented as "stop, not retry" — but BullMQ retries anything that is not an
+ * `UnrecoverableError`, so every scheduled job for such a store ran three
+ * attempts with backoff and then filed itself in the dead-letter queue "for
+ * manual intervention". One store did that on a fifteen-minute schedule for
+ * days, burning Admin API calls that could not succeed and burying real
+ * failures under identical impossible ones.
+ *
+ * Logged at warn with the reason, because a store the app can no longer reach
+ * IS worth knowing about — it just is not worth retrying.
+ */
+function stopOnReauth<T>(queue: string, run: (job: T) => Promise<unknown>) {
+  return async (job: T) => {
+    try {
+      return await run(job);
+    } catch (err) {
+      if (err instanceof ReauthRequiredError) {
+        logger.warn(
+          { queue, shop: err.shopDomain, reason: err.reason },
+          'Store must re-authorize — abandoning job without retry',
+        );
+        throw new UnrecoverableError(err.message);
+      }
+      throw err;
+    }
+  };
+}
+
 type IngestionHandler = (job: Job<IngestionJobData, unknown, IngestionJobName>) => Promise<void>;
 
 const ingestionHandlers: Record<IngestionJobName, IngestionHandler> = {
@@ -63,11 +96,11 @@ const ingestionHandlers: Record<IngestionJobName, IngestionHandler> = {
 
 const ingestionWorker = new Worker<IngestionJobData, unknown, IngestionJobName>(
   QUEUES.INGESTION,
-  async (job) => {
+  stopOnReauth(QUEUES.INGESTION, async (job) => {
     const handler = ingestionHandlers[job.name];
     if (!handler) throw new Error(`No handler for job name ${job.name}`);
     return handler(job);
-  },
+  }),
   {
     connection: workerConnection,
     // Deliberately low. Each job drives a Shopify bulk operation, and a shop
@@ -94,7 +127,7 @@ ingestionWorker.on('failed', async (job, err) => {
 
   // Only DLQ once retries are genuinely exhausted, or every transient
   // failure would raise a false alert.
-  if (job.attemptsMade >= (job.opts.attempts ?? 1)) {
+  if (err.name !== 'UnrecoverableError' && job.attemptsMade >= (job.opts.attempts ?? 1)) {
     await moveToDlq(job, err).catch((e) =>
       logger.error({ err: (e as Error).message }, 'Failed to move job to DLQ'),
     );
@@ -133,11 +166,11 @@ const syndicationHandlers: Record<SyndicationJobName, SyndicationHandler> = {
 
 const syndicationWorker = new Worker<SyndicationJobData, unknown, SyndicationJobName>(
   QUEUES.SYNDICATION,
-  async (job) => {
+  stopOnReauth(QUEUES.SYNDICATION, async (job) => {
     const handler = syndicationHandlers[job.name];
     if (!handler) throw new Error(`No handler for job name ${job.name}`);
     return handler(job);
-  },
+  }),
   { connection: workerConnection, concurrency: 20 },
 );
 
@@ -156,7 +189,7 @@ syndicationWorker.on('failed', async (job, err) => {
     'Syndication job failed',
   );
 
-  if (job.attemptsMade >= (job.opts.attempts ?? 1)) {
+  if (err.name !== 'UnrecoverableError' && job.attemptsMade >= (job.opts.attempts ?? 1)) {
     await moveToDlq(job, err).catch((e) =>
       logger.error({ err: (e as Error).message }, 'Failed to move job to DLQ'),
     );
@@ -192,11 +225,11 @@ const aiHandlers: Record<AiJobName, AiHandler> = {
 
 const aiWorker = new Worker<AiJobData, unknown, AiJobName>(
   QUEUES.AI,
-  async (job) => {
+  stopOnReauth(QUEUES.AI, async (job) => {
     const handler = aiHandlers[job.name];
     if (!handler) throw new Error(`No handler for job name ${job.name}`);
     return handler(job);
-  },
+  }),
   { connection: workerConnection, concurrency: 2 },
 );
 
@@ -215,7 +248,7 @@ aiWorker.on('failed', async (job, err) => {
     'AI job failed',
   );
 
-  if (job.attemptsMade >= (job.opts.attempts ?? 1)) {
+  if (err.name !== 'UnrecoverableError' && job.attemptsMade >= (job.opts.attempts ?? 1)) {
     await moveToDlq(job as Job<{ storeId: string }>, err).catch((e) =>
       logger.error({ err: (e as Error).message }, 'Failed to move job to DLQ'),
     );
@@ -237,11 +270,11 @@ const emailHandlers: Record<EmailJobName, EmailHandler> = {
 
 const emailWorker = new Worker<EmailJobData, unknown, EmailJobName>(
   QUEUES.EMAIL,
-  async (job) => {
+  stopOnReauth(QUEUES.EMAIL, async (job) => {
     const handler = emailHandlers[job.name];
     if (!handler) throw new Error(`No handler for job name ${job.name}`);
     return handler(job);
-  },
+  }),
   { connection: workerConnection, concurrency: 3 },
 );
 
@@ -259,7 +292,7 @@ emailWorker.on('failed', async (job, err) => {
     'Email job failed',
   );
 
-  if (job.attemptsMade >= (job.opts.attempts ?? 1)) {
+  if (err.name !== 'UnrecoverableError' && job.attemptsMade >= (job.opts.attempts ?? 1)) {
     await moveToDlq(job as Job<{ storeId: string }>, err).catch((e) =>
       logger.error({ err: (e as Error).message }, 'Failed to move job to DLQ'),
     );
@@ -284,11 +317,11 @@ const maintenanceHandlers: Record<MaintenanceJobName, MaintenanceHandler> = {
 
 const maintenanceWorker = new Worker<MaintenanceJobData, unknown, MaintenanceJobName>(
   QUEUES.MAINTENANCE,
-  async (job) => {
+  stopOnReauth(QUEUES.MAINTENANCE, async (job) => {
     const handler = maintenanceHandlers[job.name];
     if (!handler) throw new Error(`No handler for job name ${job.name}`);
     return handler(job);
-  },
+  }),
   { connection: workerConnection, concurrency: 2 },
 );
 
@@ -307,7 +340,7 @@ maintenanceWorker.on('failed', async (job, err) => {
     'Maintenance job failed',
   );
 
-  if (job.attemptsMade >= (job.opts.attempts ?? 1)) {
+  if (err.name !== 'UnrecoverableError' && job.attemptsMade >= (job.opts.attempts ?? 1)) {
     // A compliance job that exhausts its retries is an unmet legal obligation
     // on a 30-day clock, not just a failed job. It goes to the DLQ like
     // anything else, but at a severity that should page someone.
